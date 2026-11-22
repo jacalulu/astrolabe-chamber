@@ -100,6 +100,7 @@ export interface UIControllerOptions {
   onBeginIntro?: () => void;
   onSkipDirectly?: () => void;
   onReplayIntro?: () => void;
+  onVirtualMove?: (forward: number, strafe: number) => void;
 }
 
 export interface SubtitleCue {

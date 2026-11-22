@@ -34,6 +34,8 @@ export class Controls {
 
   private readonly keys = new Set<string>();
   private colliders: ColliderBox[] = [];
+  private virtualForward = 0;
+  private virtualStrafe = 0;
 
   // Standing player pose
   private readonly playerPos = new THREE.Vector3(...SPAWN_POS);
@@ -158,8 +160,26 @@ export class Controls {
     this.invertDrag = inverted;
   }
 
+  public setVirtualMove(forward: number, strafe: number): void {
+    this.virtualForward = THREE.MathUtils.clamp(forward, -1, 1);
+    this.virtualStrafe = THREE.MathUtils.clamp(strafe, -1, 1);
+    if (
+      (Math.abs(this.virtualForward) > 0.05 || Math.abs(this.virtualStrafe) > 0.05) &&
+      this.activeFocus
+    ) {
+      this.focusOn(null);
+    }
+  }
+
   public isMovingOrTransitioning(): boolean {
-    if (this.keys.size > 0 || this.pointerDown) return true;
+    if (
+      this.keys.size > 0 ||
+      this.pointerDown ||
+      Math.abs(this.virtualForward) > 0.01 ||
+      Math.abs(this.virtualStrafe) > 0.01
+    ) {
+      return true;
+    }
     if (this.velocity.lengthSq() > 0.002) return true;
     if (Math.abs(this.targetYaw - this.yaw) > 0.0008) return true;
     if (Math.abs(this.targetPitch - this.pitch) > 0.0008) return true;
@@ -364,12 +384,14 @@ export class Controls {
     // Movement when standing and no modal open (allow stepping away promptly as focus releases)
     let speedNorm = 0;
     if (!this.activeFocus && !modalOpen && this.focusBlend < 0.45) {
-      let forwardInput = 0;
-      let rightInput = 0;
+      let forwardInput = this.virtualForward;
+      let rightInput = this.virtualStrafe;
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) forwardInput += 1;
       if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) forwardInput -= 1;
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) rightInput += 1;
       if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) rightInput -= 1;
+      forwardInput = THREE.MathUtils.clamp(forwardInput, -1, 1);
+      rightInput = THREE.MathUtils.clamp(rightInput, -1, 1);
 
       this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       this.tempRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));

@@ -212,6 +212,7 @@ export function createUIController(
         <button type="button" class="title-skip-link" data-skip-direct-btn>
           Skip directly to chamber
         </button>
+        <p class="title-touch-note">Desktop recommended · Touch controls supported</p>
       </div>
     </div>
   `;
@@ -373,6 +374,38 @@ export function createUIController(
   hudRoot.appendChild(toastEl);
 
   // =========================================================================
+  // TOUCH MOVEMENT PAD (Visible only on touch / coarse-pointer devices)
+  // =========================================================================
+  const touchPadEl = document.createElement('div');
+  touchPadEl.className = 'touch-walk-pad';
+  touchPadEl.setAttribute('role', 'group');
+  touchPadEl.setAttribute('aria-label', 'Touch movement controls');
+  touchPadEl.innerHTML = `
+    <button type="button" class="touch-pad-btn touch-pad-up" data-touch-dir="up" aria-label="Walk forward">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="18 15 12 9 6 15"/>
+      </svg>
+    </button>
+    <button type="button" class="touch-pad-btn touch-pad-left" data-touch-dir="left" aria-label="Strafe left">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <span class="touch-pad-center" aria-hidden="true">✦</span>
+    <button type="button" class="touch-pad-btn touch-pad-right" data-touch-dir="right" aria-label="Strafe right">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    <button type="button" class="touch-pad-btn touch-pad-down" data-touch-dir="down" aria-label="Walk backward">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
+  `;
+  hudRoot.appendChild(touchPadEl);
+
+  // =========================================================================
   // BOTTOM INVENTORY DOCK (3 ARTIFACT SLOTS)
   // =========================================================================
   const dockWrap = document.createElement('div');
@@ -427,6 +460,21 @@ export function createUIController(
   const invTooltipNameEl = dockWrap.querySelector<HTMLElement>('[data-inv-tooltip-name]')!;
   const invTooltipDescEl = dockWrap.querySelector<HTMLElement>('[data-inv-tooltip-desc]')!;
   const invSlotBtns = Array.from(dockWrap.querySelectorAll<HTMLButtonElement>('[data-inv-slot]'));
+  const touchPadBtns = Array.from(touchPadEl.querySelectorAll<HTMLButtonElement>('[data-touch-dir]'));
+  const activeTouchDirs = new Set<string>();
+
+  function emitVirtualMove(): void {
+    const forward = (activeTouchDirs.has('up') ? 1 : 0) - (activeTouchDirs.has('down') ? 1 : 0);
+    const strafe = (activeTouchDirs.has('right') ? 1 : 0) - (activeTouchDirs.has('left') ? 1 : 0);
+    options?.onVirtualMove?.(forward, strafe);
+  }
+
+  function resetTouchMove(): void {
+    if (activeTouchDirs.size === 0) return;
+    activeTouchDirs.clear();
+    touchPadBtns.forEach((btn) => btn.classList.remove('is-pressed'));
+    options?.onVirtualMove?.(0, 0);
+  }
 
   const starEls = new Map<PuzzleId, HTMLElement>();
   for (const p of PUZZLE_PROGRESS_ORDER) {
@@ -459,7 +507,10 @@ export function createUIController(
 
   function setHudVisible(visible: boolean): void {
     hudRoot.classList.toggle('hud-hidden', !visible);
-    if (!visible) {
+    if (visible) {
+      updateMuteButton();
+    } else {
+      resetTouchMove();
       setControlsOpen(false);
       setHoverPrompt(null);
     }
@@ -675,6 +726,43 @@ export function createUIController(
     onExitFocus();
   });
 
+  touchPadBtns.forEach((btn) => {
+    const dir = btn.dataset.touchDir;
+    if (!dir) return;
+
+    const releaseDir = (): void => {
+      if (!activeTouchDirs.has(dir)) return;
+      activeTouchDirs.delete(dir);
+      btn.classList.remove('is-pressed');
+      emitVirtualMove();
+    };
+
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore if synthetic event has no active pointer */
+      }
+      activeTouchDirs.add(dir);
+      btn.classList.add('is-pressed');
+      emitVirtualMove();
+    });
+
+    btn.addEventListener('pointerup', (e) => {
+      e.stopPropagation();
+      releaseDir();
+    });
+    btn.addEventListener('pointercancel', releaseDir);
+    btn.addEventListener('lostpointercapture', releaseDir);
+  });
+
+  window.addEventListener('blur', resetTouchMove);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) resetTouchMove();
+  });
+
   invSlotBtns.forEach((btn, idx) => {
     const slot = ARTIFACT_SLOTS[idx];
     btn.addEventListener('click', () => {
@@ -774,9 +862,12 @@ export function createUIController(
 
   function setFocusBanner(label: string | null): void {
     if (label) {
+      resetTouchMove();
+      hudRoot.classList.add('is-focused');
       focusLabelEl.textContent = label;
       focusBar.classList.add('is-visible');
     } else {
+      hudRoot.classList.remove('is-focused');
       focusBar.classList.remove('is-visible');
     }
   }
@@ -786,26 +877,32 @@ export function createUIController(
     showToast,
     setFocusBanner,
     openLogbook: () => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.openLogbook();
     },
     openAlmanac: () => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.openAlmanac();
     },
     openStarChart: () => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.openStarChart();
     },
     openTelescopeEyepiece: (aligned: boolean) => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.openTelescopeEyepiece(aligned);
     },
     openHintJournal: () => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.openHintJournal();
     },
     showVictory: (elapsedSeconds: number, hintsUsed: number) => {
+      resetTouchMove();
       setControlsOpen(false);
       overlays.showVictory(elapsedSeconds, hintsUsed);
     },

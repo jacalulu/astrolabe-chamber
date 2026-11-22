@@ -90,7 +90,7 @@ export class PostProcessing {
       Math.max(1, Math.floor(height * pixelRatio)),
       {
         type: THREE.HalfFloatType,
-        samples: 2,
+        samples: sceneManager.isConstrainedDevice ? 0 : 2,
       }
     );
 

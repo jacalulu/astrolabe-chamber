@@ -33,6 +33,7 @@ export interface GameDebugAPI {
     hasFocusTarget: boolean;
   }>;
   dismissTitle: () => void;
+  setHudVisible: (visible: boolean) => void;
   playIntro: () => void;
   skipIntro: () => void;
   setIntroTime: (seconds: number) => void;
@@ -56,6 +57,7 @@ export interface GameDebugAPI {
   isInvertDrag: () => boolean;
   getPerfStats: () => {
     dpr: number;
+    isConstrainedDevice: boolean;
     shadowAutoUpdate: boolean;
     powerSaverMode: boolean;
     paused: boolean;
@@ -75,16 +77,159 @@ const IDLE_TIMEOUT_MS = 4000;
 const ACTIVE_SHADOW_INTERVAL_MS = 142; // ~7 Hz shadow updates during active motion
 const IDLE_SHADOW_INTERVAL_MS = 500; // ~2 Hz shadow updates during idle ambient orbit
 
+function dismissBootLoader(): void {
+  const loader = document.getElementById('boot-loader');
+  if (!loader) return;
+  loader.classList.add('boot-hidden');
+  window.setTimeout(() => {
+    loader.remove();
+  }, 460);
+}
+
+function renderWebGLFallback(container: HTMLElement): void {
+  dismissBootLoader();
+  const uiRoot = document.getElementById('ui-root');
+  if (uiRoot) uiRoot.innerHTML = '';
+
+  container.innerHTML = `
+    <div style="
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: radial-gradient(circle at 50% 35%, #121a30 0%, #060913 75%);
+      color: #f0e3c6;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    ">
+      <div style="
+        max-width: 480px;
+        width: 100%;
+        padding: 36px 32px;
+        border-radius: 20px;
+        background: rgba(11, 15, 28, 0.92);
+        border: 1px solid rgba(212, 175, 101, 0.36);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+        text-align: center;
+      ">
+        <p style="
+          margin: 0 0 10px;
+          font-family: 'Cinzel', Georgia, serif;
+          font-size: 11px;
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          color: #d4af65;
+        ">Royal Observatory &middot; 1898</p>
+        <h1 style="
+          margin: 0 0 14px;
+          font-family: 'Cinzel', Georgia, serif;
+          font-size: 26px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          color: #f6ead0;
+        ">The Astrolabe Chamber</h1>
+        <p style="
+          margin: 0 0 24px;
+          font-size: 15px;
+          line-height: 1.65;
+          color: rgba(235, 223, 198, 0.82);
+        ">
+          This interactive 3D observatory requires WebGL graphics acceleration, which is currently unavailable or disabled in your browser.
+        </p>
+        <a href="/side-projects/" style="
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 12px 24px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #e5c375 0%, #b98c3a 100%);
+          color: #0b0f1b;
+          font-weight: 700;
+          font-size: 14px;
+          text-decoration: none;
+          letter-spacing: 0.04em;
+        ">Watch the Walkthrough on Side Projects &rarr;</a>
+      </div>
+    </div>
+  `;
+}
+
+function createContextLostBanner(): { show: () => void; hide: () => void; remove: () => void } {
+  const el = document.createElement('div');
+  el.id = 'webgl-context-banner';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  el.textContent = 'Restoring 3D Observatory…';
+  Object.assign(el.style, {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    zIndex: '9500',
+    padding: '14px 24px',
+    borderRadius: '999px',
+    background: 'rgba(10, 14, 26, 0.92)',
+    border: '1px solid rgba(212, 175, 101, 0.45)',
+    color: '#f2dfb4',
+    fontFamily: "'Cinzel', Georgia, serif",
+    fontSize: '13px',
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    boxShadow: '0 16px 40px rgba(0, 0, 0, 0.5)',
+    display: 'none',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(el);
+  return {
+    show: () => {
+      el.style.display = 'block';
+    },
+    hide: () => {
+      el.style.display = 'none';
+    },
+    remove: () => {
+      el.remove();
+    },
+  };
+}
+
 function bootstrap(): void {
   const container = document.getElementById('canvas-container');
   if (!container) {
     throw new Error('Missing #canvas-container element');
   }
 
+  let contextLost = false;
+  const contextBanner = createContextLostBanner();
+  let startLoopFn: (() => void) | null = null;
+  let stopLoopFn: (() => void) | null = null;
+
+  let sceneManager: SceneManager;
+  let postProcessing: PostProcessing;
+  try {
+    sceneManager = new SceneManager(container, {
+      onContextLost: () => {
+        contextLost = true;
+        contextBanner.show();
+        stopLoopFn?.();
+      },
+      onContextRestored: () => {
+        contextLost = false;
+        contextBanner.hide();
+        startLoopFn?.();
+      },
+    });
+    postProcessing = new PostProcessing(sceneManager);
+  } catch (err) {
+    console.error('WebGL initialization failed:', err);
+    contextBanner.remove();
+    renderWebGLFallback(container);
+    return;
+  }
+
   const state = createGameState();
   const audio = createSoundEngine();
-  const sceneManager = new SceneManager(container);
-  const postProcessing = new PostProcessing(sceneManager);
 
   // Environment reflection probe & procedural PBR texture bundle
   const envMap = createObservatoryEnvMap(sceneManager.renderer);
@@ -102,6 +247,9 @@ function bootstrap(): void {
 
   const props = buildAllProps(textures);
   sceneManager.scene.add(props.group);
+
+  // Apply adaptive GPU tier shadow limits on constrained / mobile devices
+  sceneManager.applyQualityTierToShadows();
 
   // Forward-declared handles for UI / Intro callbacks
   let invertDragSetting = false;
@@ -192,13 +340,25 @@ function bootstrap(): void {
       onBeginIntro: () => startHybridIntro(false),
       onSkipDirectly: () => enterChamberDirectly(),
       onReplayIntro: () => startHybridIntro(true),
+      onVirtualMove: (forward, strafe) => {
+        wakeActivity();
+        controls?.setVirtualMove(forward, strafe);
+      },
     }
   );
 
   const uiMount = document.getElementById('ui-root') ?? document.body;
-  const introOverlay = createIntroOverlay(uiMount, () => {
-    introDirector?.skip();
-  });
+  const introOverlay = createIntroOverlay(
+    uiMount,
+    () => {
+      introDirector?.skip();
+    },
+    () => {
+      wasUserMutedBeforeIntro = !wasUserMutedBeforeIntro;
+      introOverlay.setMuted(wasUserMutedBeforeIntro);
+      return wasUserMutedBeforeIntro;
+    }
+  );
 
   const activeIntroDirector = new IntroDirector(introOverlay, () => {
     enterChamberFromIntro();
@@ -276,6 +436,7 @@ function bootstrap(): void {
 
   // Render helper for immediate deterministic renders (e.g. setCamera / setIntroTime)
   const renderNow = (): void => {
+    if (contextLost) return;
     sceneManager.requestShadowUpdate();
     postProcessing.render(elapsedSimSeconds);
     lastRenderTime = performance.now();
@@ -305,6 +466,9 @@ function bootstrap(): void {
     listInteractables: () => interaction.listInteractables(),
     dismissTitle: () => {
       enterChamberDirectly();
+    },
+    setHudVisible: (visible) => {
+      ui.setHudVisible(visible);
     },
     playIntro: () => {
       startHybridIntro(false);
@@ -381,15 +545,16 @@ function bootstrap(): void {
     isInvertDrag: () => activeControls.isInvertDrag(),
     getPerfStats: () => ({
       dpr: sceneManager.renderer.getPixelRatio(),
+      isConstrainedDevice: sceneManager.isConstrainedDevice,
       shadowAutoUpdate: sceneManager.renderer.shadowMap.autoUpdate,
       powerSaverMode,
-      paused: isPaused,
+      paused: isPaused || contextLost,
     }),
   };
 
-  // Smart battery-conscious render loop (pauses on hidden tab, 60fps active/Act II, ~18fps modal/idle)
+  // Smart battery-conscious render loop (pauses on hidden tab/context loss, 60fps active/Act II, ~18fps modal/idle)
   const animate = (now: number): void => {
-    if (isPaused) {
+    if (isPaused || contextLost) {
       rafId = 0;
       return;
     }
@@ -471,7 +636,7 @@ function bootstrap(): void {
   };
 
   const startLoop = (): void => {
-    if (rafId !== 0 || isPaused) return;
+    if (rafId !== 0 || isPaused || contextLost) return;
     lastRenderTime = performance.now();
     sceneManager.requestShadowUpdate();
     rafId = window.requestAnimationFrame(animate);
@@ -483,6 +648,9 @@ function bootstrap(): void {
       rafId = 0;
     }
   };
+
+  startLoopFn = startLoop;
+  stopLoopFn = stopLoop;
 
   const onVisibilityChange = (): void => {
     if (document.hidden) {
@@ -497,9 +665,10 @@ function bootstrap(): void {
 
   document.addEventListener('visibilitychange', onVisibilityChange);
 
-  // Render initial frame immediately & kick off loop if visible
+  // Render initial frame immediately, smoothly dismiss #boot-loader, and kick off loop
   renderNow();
-  if (!isPaused) {
+  dismissBootLoader();
+  if (!isPaused && !contextLost) {
     startLoop();
   }
 
@@ -514,6 +683,7 @@ function bootstrap(): void {
       }
       unsubscribeStateShadows();
       introOverlay.dispose();
+      contextBanner.remove();
       state.stopTimer();
       interaction.dispose();
       activeControls.dispose();

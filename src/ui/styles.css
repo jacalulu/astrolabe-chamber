@@ -71,6 +71,7 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 /* ==========================================================================
@@ -90,7 +91,8 @@ body {
 .hud-root.hud-hidden .hud-topbar,
 .hud-root.hud-hidden .hud-dock-wrap,
 .hud-root.hud-hidden .hud-focus-bar,
-.hud-root.hud-hidden .hud-onboarding {
+.hud-root.hud-hidden .hud-onboarding,
+.hud-root.hud-hidden .touch-walk-pad {
   opacity: 0;
   transform: translateY(6px);
   pointer-events: none;
@@ -99,7 +101,8 @@ body {
 .hud-topbar,
 .hud-dock-wrap,
 .hud-focus-bar,
-.hud-onboarding {
+.hud-onboarding,
+.touch-walk-pad {
   transition: opacity 0.55s var(--ease-smooth), transform 0.55s var(--ease-smooth);
 }
 
@@ -322,6 +325,21 @@ body {
   border-radius: 3px;
 }
 
+.title-touch-note {
+  display: none;
+  margin: 4px 0 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(212, 175, 106, 0.72);
+}
+
+@media (pointer: coarse) {
+  .title-touch-note {
+    display: block;
+  }
+}
+
 /* ==========================================================================
    HYBRID OPENING CINEMATIC OVERLAY (Act I Video -> Act II Live 3D Letterbox)
    ========================================================================== */
@@ -427,12 +445,57 @@ body {
   transform: translateY(0);
 }
 
-.intro-skip-btn {
+.intro-top-controls {
   position: absolute;
-  top: clamp(10px, 2vh, 22px);
-  right: 22px;
+  top: max(clamp(10px, 2vh, 22px), env(safe-area-inset-top));
+  right: max(22px, env(safe-area-inset-right));
   z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   pointer-events: auto;
+}
+
+.intro-mute-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: rgba(244, 236, 220, 0.88);
+  background: rgba(11, 16, 28, 0.72);
+  border: 1px solid rgba(212, 175, 106, 0.34);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.intro-mute-btn svg {
+  width: 15px;
+  height: 15px;
+  color: var(--brass);
+}
+
+.intro-mute-btn:hover {
+  border-color: rgba(242, 213, 148, 0.68);
+  background: rgba(20, 28, 46, 0.88);
+  color: var(--brass-bright);
+}
+
+.intro-mute-btn.is-muted svg {
+  color: rgba(212, 175, 106, 0.45);
+}
+
+.intro-mute-btn:focus-visible {
+  outline: 2px solid var(--brass-bright);
+  outline-offset: 2px;
+}
+
+.intro-skip-btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -2064,4 +2127,277 @@ dialog.obs-dialog[open] {
   justify-content: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   TOUCH WALK PAD (Coarse-pointer / mobile devices only, hidden in Focus Mode)
+   ========================================================================== */
+
+.touch-walk-pad {
+  display: none;
+  position: fixed;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  z-index: 24;
+  width: 112px;
+  height: 112px;
+  padding: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  place-items: center;
+  background: radial-gradient(circle at 50% 50%, rgba(16, 22, 36, 0.72), rgba(8, 12, 22, 0.84));
+  border: 1px solid rgba(212, 175, 106, 0.36);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(242, 213, 148, 0.14);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+@media (pointer: coarse) {
+  .touch-walk-pad {
+    display: grid;
+  }
+
+  .hud-onboarding {
+    display: none;
+  }
+}
+
+.hud-root.is-focused .touch-walk-pad {
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+}
+
+.touch-pad-btn {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(212, 175, 106, 0.12);
+  border: 1px solid rgba(212, 175, 106, 0.32);
+  color: var(--brass-bright);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+
+.touch-pad-btn svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.touch-pad-btn.is-pressed,
+.touch-pad-btn:active {
+  background: rgba(242, 213, 148, 0.32);
+  border-color: var(--brass-bright);
+  transform: scale(0.92);
+}
+
+.touch-pad-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.touch-pad-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.touch-pad-center {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 11px;
+  color: rgba(212, 175, 106, 0.48);
+  pointer-events: none;
+}
+
+.touch-pad-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.touch-pad-down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+/* ==========================================================================
+   MOBILE RESPONSIVE HUD & SAFE-AREA INSETS (<= 720px)
+   ========================================================================== */
+
+@media (max-width: 720px) {
+  .hud-topbar {
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      0
+      max(12px, env(safe-area-inset-left));
+    gap: 8px;
+  }
+
+  .hud-topleft-stack {
+    max-width: calc(100vw - 154px);
+    gap: 6px;
+  }
+
+  .hud-glass-pill {
+    height: 36px;
+    padding: 0 11px;
+    gap: 8px;
+  }
+
+  .hud-chamber-title,
+  .hud-chamber-title + .hud-vdiv {
+    display: none;
+  }
+
+  .hud-timer {
+    font-size: 12px;
+    min-width: 38px;
+  }
+
+  .hud-constellation-progress {
+    gap: 5px;
+  }
+
+  .hud-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .hud-pill-btn {
+    height: 36px;
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .hud-pill-btn span {
+    display: none;
+  }
+
+  .hud-lead-ribbon {
+    position: fixed;
+    top: calc(max(12px, env(safe-area-inset-top)) + 44px);
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    max-width: none;
+    padding: 6px 10px;
+  }
+
+  .hud-lead-ribbon.is-collapsed {
+    right: auto;
+  }
+
+  .hud-lead-text {
+    font-size: 14px;
+    line-height: 1.24;
+  }
+
+  .hud-root.is-focused .hud-lead-ribbon {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .hud-focus-bar {
+    top: calc(max(12px, env(safe-area-inset-top)) + 44px);
+    width: calc(100vw - 24px);
+    max-width: 380px;
+    padding: 6px 12px 7px;
+  }
+
+  .focus-guide-line {
+    font-size: 10px;
+  }
+
+  .hud-dock-wrap {
+    bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .inv-dock {
+    gap: 7px;
+    padding: 6px 8px;
+  }
+
+  .inv-slot {
+    width: 52px;
+    height: 52px;
+  }
+
+  .inv-slot-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .hover-prompt {
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 90px);
+    max-width: calc(100vw - 24px);
+    padding: 7px 13px;
+    gap: 7px;
+  }
+
+  .hover-prompt-text {
+    font-size: 12px;
+  }
+
+  .hover-prompt-subhint {
+    font-size: 11px;
+  }
+
+  .hud-toast {
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 138px);
+    max-width: calc(100vw - 24px);
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+
+  .title-card {
+    padding: 36px 26px 32px;
+  }
+
+  .intro-subtitle-wrap {
+    width: calc(100vw - 28px);
+    bottom: calc(clamp(44px, 8.5vh, 84px) + 12px);
+  }
+
+  .intro-subtitle-text {
+    font-size: clamp(16px, 4.4vw, 20px);
+    padding: 5px 12px;
+  }
+
+  .intro-skip-btn .hud-kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) and (pointer: coarse) {
+  .hud-dock-wrap {
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    transform: none;
+    align-items: flex-end;
+  }
+
+  .inv-tooltip {
+    max-width: 220px;
+    text-align: right;
+  }
+
+  .hover-prompt {
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 120px);
+  }
+
+  .hud-toast {
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 166px);
+  }
 }
