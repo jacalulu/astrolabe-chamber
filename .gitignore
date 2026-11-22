@@ -3,5 +3,5 @@ dist/
 .vite/
 .DS_Store
 *.log
-*.mp4
+/*.mp4
 *.webm

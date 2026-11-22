@@ -183,7 +183,7 @@ export function createUIController(
   let toastTimeout: number | null = null;
 
   // =========================================================================
-  // OPENING TITLE VEIL — 1898 WAX-SEALED MIDNIGHT SUMMONS
+  // MINIMALIST CINEMA OPENING TITLE VEIL
   // =========================================================================
   const titleVeil = document.createElement('div');
   titleVeil.className = 'title-veil';
@@ -196,7 +196,7 @@ export function createUIController(
         <ellipse cx="32" cy="32" rx="26" ry="11" transform="rotate(24 32 32)" stroke="currentColor" stroke-width="1" opacity="0.65"/>
         <polygon points="32,14 34.8,29.2 50,32 34.8,34.8 32,50 29.2,34.8 14,32 29.2,29.2" fill="currentColor"/>
       </svg>
-      <p class="title-kicker">Royal Observatory · Midnight Summons · 1898</p>
+      <p class="title-kicker">Royal Observatory · 1898</p>
       <h1 id="title-veil-heading" class="title-heading">The Astrolabe Chamber</h1>
       <div class="title-divider" aria-hidden="true">
         <span class="title-divider-line"></span>
@@ -205,28 +205,14 @@ export function createUIController(
         </svg>
         <span class="title-divider-line"></span>
       </div>
-      <p class="title-premise">
-        You answered Master Astronomer Dr. Alistair Vance’s urgent midnight telegram — only to find
-        him vanished and the ironbound Astrolabe Door bolted behind you. Follow Vance’s trail
-        through his celestial instruments, recover the <strong>Obsidian Star Key</strong>, and
-        unseal the door before midnight strikes.
-      </p>
-      <div class="title-first-lead">
-        <span class="title-first-lead-seal" aria-hidden="true">AV</span>
-        <div class="title-first-lead-text">
-          <span class="title-first-lead-label">First Lead</span>
-          Begin at Dr. Vance’s Writing Desk (to your right) — his open Logbook awaits beneath the emerald lamp.
-        </div>
+      <div class="title-cta-stack">
+        <button type="button" class="btn-brass-primary title-begin-btn" data-begin-btn>
+          Begin
+        </button>
+        <button type="button" class="title-skip-link" data-skip-direct-btn>
+          Skip directly to chamber
+        </button>
       </div>
-      <div class="title-controls-row" aria-label="Controls overview">
-        <span class="title-control-item"><kbd class="hud-kbd">WASD / Arrows</kbd> Walk</span>
-        <span class="title-control-item"><kbd class="hud-kbd">Drag</kbd> Look 360°</span>
-        <span class="title-control-item"><kbd class="hud-kbd">Click</kbd> Inspect &amp; Interact</span>
-        <span class="title-control-item"><kbd class="hud-kbd">Esc</kbd> Step Back</span>
-      </div>
-      <button type="button" class="btn-brass-primary" data-enter-btn>
-        Enter the Observatory
-      </button>
     </div>
   `;
   mount.appendChild(titleVeil);
@@ -309,6 +295,13 @@ export function createUIController(
             data-invert-drag-btn
           ></button>
         </div>
+        <div class="controls-divider" aria-hidden="true"></div>
+        <button type="button" class="controls-action-btn" data-replay-intro-btn>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="6 4 20 12 6 20 6 4"/>
+          </svg>
+          <span>Replay Opening Cinematic</span>
+        </button>
       </div>
     </div>
   `;
@@ -408,7 +401,8 @@ export function createUIController(
   hudRoot.appendChild(dockWrap);
 
   // Element references
-  const enterBtn = titleVeil.querySelector<HTMLButtonElement>('[data-enter-btn]')!;
+  const beginBtn = titleVeil.querySelector<HTMLButtonElement>('[data-begin-btn]')!;
+  const skipDirectBtn = titleVeil.querySelector<HTMLButtonElement>('[data-skip-direct-btn]')!;
   const timerEl = topbar.querySelector<HTMLElement>('[data-hud-timer]')!;
   const leadRibbonEl = topbar.querySelector<HTMLElement>('[data-lead-ribbon]')!;
   const leadKickerEl = topbar.querySelector<HTMLElement>('[data-lead-kicker]')!;
@@ -419,6 +413,7 @@ export function createUIController(
   const controlsBtn = topbar.querySelector<HTMLButtonElement>('[data-controls-btn]')!;
   const controlsPopover = topbar.querySelector<HTMLElement>('[data-controls-popover]')!;
   const invertDragBtn = topbar.querySelector<HTMLButtonElement>('[data-invert-drag-btn]')!;
+  const replayIntroBtn = topbar.querySelector<HTMLButtonElement>('[data-replay-intro-btn]')!;
   const muteBtn = topbar.querySelector<HTMLButtonElement>('[data-mute-btn]')!;
   const onboardDragChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-drag]')!;
   const onboardWalkChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-walk]')!;
@@ -462,13 +457,18 @@ export function createUIController(
     leadRestoreBtn.hidden = !leadCollapsed;
   }
 
+  function setHudVisible(visible: boolean): void {
+    hudRoot.classList.toggle('hud-hidden', !visible);
+    if (!visible) {
+      setControlsOpen(false);
+      setHoverPrompt(null);
+    }
+  }
+
   function dismissTitleVeil(): void {
     if (titleVeilDismissed) return;
     titleVeilDismissed = true;
     titleVeil.classList.add('is-dismissed');
-    hudRoot.classList.remove('hud-hidden');
-    audio.init();
-    state.startTimer();
   }
 
   function setControlsOpen(open: boolean): void {
@@ -602,9 +602,35 @@ export function createUIController(
   // =========================================================================
   // EVENT LISTENERS
   // =========================================================================
-  enterBtn.addEventListener('click', () => {
-    dismissTitleVeil();
+  beginBtn.addEventListener('click', () => {
+    if (options?.onBeginIntro) {
+      options.onBeginIntro();
+    } else {
+      dismissTitleVeil();
+      setHudVisible(true);
+      audio.init();
+      audio.playClick();
+      state.startTimer();
+    }
+  });
+
+  skipDirectBtn.addEventListener('click', () => {
+    if (options?.onSkipDirectly) {
+      options.onSkipDirectly();
+      audio.playClick();
+    } else {
+      dismissTitleVeil();
+      setHudVisible(true);
+      audio.init();
+      audio.playClick();
+      state.startTimer();
+    }
+  });
+
+  replayIntroBtn.addEventListener('click', () => {
+    setControlsOpen(false);
     audio.playClick();
+    options?.onReplayIntro?.();
   });
 
   journalBtn.addEventListener('click', () => {
@@ -785,5 +811,7 @@ export function createUIController(
     },
     isModalOpen: () => !titleVeilDismissed || overlays.isAnyOpen(),
     dismissTitleVeil,
+    setHudVisible,
+    isTitleVeilVisible: () => !titleVeilDismissed,
   };
 }

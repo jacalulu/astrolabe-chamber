@@ -1,10 +1,11 @@
 import './ui/styles.css';
-import type { GameStateSnapshot } from './types';
+import type { GameStateSnapshot, IntroAct } from './types';
 import { createGameState } from './engine/GameState';
 import { SceneManager } from './engine/SceneManager';
 import { PostProcessing } from './engine/PostProcessing';
 import { Controls } from './engine/Controls';
 import { InteractionSystem } from './engine/InteractionSystem';
+import { IntroDirector } from './engine/IntroCinematic';
 import { createProceduralTextures } from './assets/ProceduralTextures';
 import { createObservatoryEnvMap } from './assets/EnvironmentMap';
 import { buildObservatoryRoom } from './world/ObservatoryRoom';
@@ -12,6 +13,7 @@ import { buildAtmosphere } from './world/Atmosphere';
 import { buildAllProps } from './world/props';
 import { createSoundEngine } from './audio/SoundEngine';
 import { createUIController } from './ui/HUD';
+import { createIntroOverlay } from './ui/IntroOverlay';
 
 export interface GameDebugAPI {
   setCamera: (pos: [number, number, number], lookAt: [number, number, number]) => void;
@@ -31,6 +33,17 @@ export interface GameDebugAPI {
     hasFocusTarget: boolean;
   }>;
   dismissTitle: () => void;
+  playIntro: () => void;
+  skipIntro: () => void;
+  setIntroTime: (seconds: number) => void;
+  getIntroStatus: () => {
+    playing: boolean;
+    act: IntroAct;
+    time: number;
+    act1Duration: number;
+    totalDuration: number;
+    currentSubtitle: string | null;
+  };
   openLogbook: () => void;
   openAlmanac: () => void;
   openStarChart: () => void;
@@ -57,6 +70,7 @@ declare global {
 
 const ACTIVE_FRAME_INTERVAL_MS = 15.5; // Caps cleanly at 60fps (prevents 120fps Retina battery drain)
 const IDLE_FRAME_INTERVAL_MS = 1000 / 18; // ~18fps gentle ambient power-saver cadence
+const START_SCREEN_INTERVAL_MS = 1000 / 24; // ~24fps silky ambient title-screen drift
 const IDLE_TIMEOUT_MS = 4000;
 const ACTIVE_SHADOW_INTERVAL_MS = 142; // ~7 Hz shadow updates during active motion
 const IDLE_SHADOW_INTERVAL_MS = 500; // ~2 Hz shadow updates during idle ambient orbit
@@ -89,9 +103,12 @@ function bootstrap(): void {
   const props = buildAllProps(textures);
   sceneManager.scene.add(props.group);
 
-  // Forward-declared controls handle & invert-drag preference for UI callbacks
+  // Forward-declared handles for UI / Intro callbacks
   let invertDragSetting = false;
   let controls: Controls | null = null;
+  let introDirector: IntroDirector | null = null;
+  let isReplayMode = false;
+  let wasUserMutedBeforeIntro = false;
 
   // Power-saver activity tracking
   let lastInputTime = performance.now();
@@ -106,6 +123,48 @@ function bootstrap(): void {
     lastInputTime = performance.now();
   };
 
+  const enterChamberFromIntro = (): void => {
+    wakeActivity();
+    if (!isReplayMode) {
+      controls?.resetToSpawn();
+    }
+    isReplayMode = false;
+    ui.dismissTitleVeil();
+    ui.setHudVisible(true);
+    audio.setMuted(wasUserMutedBeforeIntro);
+    audio.init();
+    state.startTimer();
+    sceneManager.requestShadowUpdate();
+  };
+
+  const startHybridIntro = (replay = false): void => {
+    wakeActivity();
+    isReplayMode = replay;
+    wasUserMutedBeforeIntro = audio.isMuted();
+    // Unlock Web Audio inside the user gesture while keeping ambient clock/wind silent during the orchestral intro
+    audio.setMuted(true);
+    audio.init();
+    controls?.focusOn(null);
+    ui.dismissTitleVeil();
+    ui.setHudVisible(false);
+    introDirector?.start(sceneManager.camera, wasUserMutedBeforeIntro);
+  };
+
+  const enterChamberDirectly = (): void => {
+    wakeActivity();
+    if (introDirector?.isPlaying()) {
+      introDirector.skip();
+      return;
+    }
+    isReplayMode = false;
+    ui.dismissTitleVeil();
+    ui.setHudVisible(true);
+    controls?.resetToSpawn();
+    audio.init();
+    state.startTimer();
+    sceneManager.requestShadowUpdate();
+  };
+
   const ui = createUIController(
     state,
     audio,
@@ -118,6 +177,7 @@ function bootstrap(): void {
       state.reset();
       controls?.resetToSpawn();
       ui.setFocusBanner(null);
+      ui.setHudVisible(true);
       ui.showToast('The Astrolabe Chamber has been reset.');
       sceneManager.requestShadowUpdate();
       state.startTimer();
@@ -129,13 +189,29 @@ function bootstrap(): void {
         invertDragSetting = inverted;
         controls?.setInvertDrag(inverted);
       },
+      onBeginIntro: () => startHybridIntro(false),
+      onSkipDirectly: () => enterChamberDirectly(),
+      onReplayIntro: () => startHybridIntro(true),
     }
   );
+
+  const uiMount = document.getElementById('ui-root') ?? document.body;
+  const introOverlay = createIntroOverlay(uiMount, () => {
+    introDirector?.skip();
+  });
+
+  const activeIntroDirector = new IntroDirector(introOverlay, () => {
+    enterChamberFromIntro();
+  });
+  introDirector = activeIntroDirector;
+  void activeIntroDirector.loadManifest('./intro/subtitles.json');
+
+  const isGameplayBlocked = (): boolean => ui.isModalOpen() || activeIntroDirector.isPlaying();
 
   const activeControls = new Controls({
     camera: sceneManager.camera,
     domElement: sceneManager.renderer.domElement,
-    isModalOpen: () => ui.isModalOpen(),
+    isModalOpen: isGameplayBlocked,
     isEscaped: () => state.get().escaped,
     onFootstep: () => audio.playFootstep(),
     onFocusChange: (target) => {
@@ -177,6 +253,15 @@ function bootstrap(): void {
 
   interaction.register([...room.interactables, ...props.interactables]);
 
+  // Allow Esc key to cleanly skip the opening cinematic
+  const onIntroKeyDown = (e: KeyboardEvent): void => {
+    if (e.code === 'Escape' && activeIntroDirector.isPlaying()) {
+      e.preventDefault();
+      activeIntroDirector.skip();
+    }
+  };
+  window.addEventListener('keydown', onIntroKeyDown);
+
   // Any puzzle/inventory/door state mutation wakes rendering & updates shadows
   const unsubscribeStateShadows = state.subscribe(() => {
     sceneManager.requestShadowUpdate();
@@ -189,7 +274,7 @@ function bootstrap(): void {
     window.addEventListener(evt, wakeActivity, { passive: true });
   }
 
-  // Render helper for immediate deterministic renders (e.g. setCamera)
+  // Render helper for immediate deterministic renders (e.g. setCamera / setIntroTime)
   const renderNow = (): void => {
     sceneManager.requestShadowUpdate();
     postProcessing.render(elapsedSimSeconds);
@@ -219,10 +304,23 @@ function bootstrap(): void {
     },
     listInteractables: () => interaction.listInteractables(),
     dismissTitle: () => {
-      wakeActivity();
-      ui.dismissTitleVeil();
-      state.startTimer();
+      enterChamberDirectly();
     },
+    playIntro: () => {
+      startHybridIntro(false);
+    },
+    skipIntro: () => {
+      activeIntroDirector.skip();
+    },
+    setIntroTime: (seconds) => {
+      wakeActivity();
+      if (!activeIntroDirector.isPlaying()) {
+        startHybridIntro(false);
+      }
+      activeIntroDirector.seekForDebug(seconds, sceneManager.camera);
+      renderNow();
+    },
+    getIntroStatus: () => activeIntroDirector.getStatus(),
     openLogbook: () => {
       wakeActivity();
       if (!state.get().hasReadLogbook) {
@@ -289,7 +387,7 @@ function bootstrap(): void {
     }),
   };
 
-  // Smart battery-conscious render loop (pauses on hidden tab, 60fps active, ~18fps modal/idle)
+  // Smart battery-conscious render loop (pauses on hidden tab, 60fps active/Act II, ~18fps modal/idle)
   const animate = (now: number): void => {
     if (isPaused) {
       rafId = 0;
@@ -297,12 +395,49 @@ function bootstrap(): void {
     }
     rafId = window.requestAnimationFrame(animate);
 
+    const introPlaying = activeIntroDirector.isPlaying();
+    const titleVeilVisible = ui.isTitleVeilVisible();
     const modalOpen = ui.isModalOpen();
+
+    if (introPlaying) {
+      const shouldRender3D = activeIntroDirector.shouldRender3D();
+      const minInterval = shouldRender3D ? ACTIVE_FRAME_INTERVAL_MS : IDLE_FRAME_INTERVAL_MS;
+      const elapsedMs = now - lastRenderTime;
+      if (elapsedMs < minInterval) {
+        return;
+      }
+
+      const delta = Math.min(Math.max(elapsedMs / 1000, 0.001), 0.08);
+      lastRenderTime = now;
+      elapsedSimSeconds += delta;
+      powerSaverMode = !shouldRender3D;
+
+      activeIntroDirector.update(delta, sceneManager.camera);
+
+      if (shouldRender3D) {
+        const snap = state.get();
+        atmosphere.update(elapsedSimSeconds, delta);
+        room.update(elapsedSimSeconds, delta, snap);
+        props.update(elapsedSimSeconds, delta, snap);
+        if (now - lastShadowTime >= ACTIVE_SHADOW_INTERVAL_MS) {
+          sceneManager.requestShadowUpdate();
+          lastShadowTime = now;
+        }
+        postProcessing.render(elapsedSimSeconds);
+      }
+      return;
+    }
+
     const recentlyActive =
-      !modalOpen && (now - lastInputTime < IDLE_TIMEOUT_MS || activeControls.isMovingOrTransitioning());
+      !modalOpen &&
+      (now - lastInputTime < IDLE_TIMEOUT_MS || activeControls.isMovingOrTransitioning());
     powerSaverMode = !recentlyActive;
 
-    const minInterval = recentlyActive ? ACTIVE_FRAME_INTERVAL_MS : IDLE_FRAME_INTERVAL_MS;
+    const minInterval = titleVeilVisible
+      ? START_SCREEN_INTERVAL_MS
+      : recentlyActive
+        ? ACTIVE_FRAME_INTERVAL_MS
+        : IDLE_FRAME_INTERVAL_MS;
     const elapsedMs = now - lastRenderTime;
     if (elapsedMs < minInterval) {
       return;
@@ -314,8 +449,13 @@ function bootstrap(): void {
 
     const snap = state.get();
 
-    activeControls.update(delta);
-    interaction.update(delta);
+    if (titleVeilVisible) {
+      activeIntroDirector.updateStartScreenIdle(elapsedSimSeconds, sceneManager.camera);
+    } else {
+      activeControls.update(delta);
+      interaction.update(delta);
+    }
+
     atmosphere.update(elapsedSimSeconds, delta);
     room.update(elapsedSimSeconds, delta, snap);
     props.update(elapsedSimSeconds, delta, snap);
@@ -368,10 +508,12 @@ function bootstrap(): void {
     import.meta.hot.dispose(() => {
       stopLoop();
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('keydown', onIntroKeyDown);
       for (const evt of inputEvents) {
         window.removeEventListener(evt, wakeActivity);
       }
       unsubscribeStateShadows();
+      introOverlay.dispose();
       state.stopTimer();
       interaction.dispose();
       activeControls.dispose();

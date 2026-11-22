@@ -97,6 +97,35 @@ export interface GameStateSnapshot {
 export interface UIControllerOptions {
   isInvertDrag?: () => boolean;
   onToggleInvertDrag?: (inverted: boolean) => void;
+  onBeginIntro?: () => void;
+  onSkipDirectly?: () => void;
+  onReplayIntro?: () => void;
+}
+
+export interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface IntroTimelineManifest {
+  act1Duration: number;
+  totalDuration: number;
+  cues: SubtitleCue[];
+}
+
+export type IntroAct = 'idle' | 'act1' | 'act2';
+
+export interface IntroOverlayAPI {
+  start: (manifest: IntroTimelineManifest) => void;
+  setAct: (act: IntroAct) => void;
+  setSubtitle: (text: string | null) => void;
+  getCurrentTime: () => number;
+  isAudioEnded: () => boolean;
+  setMuted: (muted: boolean) => void;
+  stop: () => void;
+  isActive: () => boolean;
+  dispose: () => void;
 }
 
 export interface FocusTarget {
@@ -177,6 +206,8 @@ export interface UIControllerAPI {
   showVictory: (elapsedSeconds: number, hintsUsed: number) => void;
   isModalOpen: () => boolean;
   dismissTitleVeil: () => void;
+  setHudVisible: (visible: boolean) => void;
+  isTitleVeilVisible: () => boolean;
 }
 
 export interface ColliderBox {

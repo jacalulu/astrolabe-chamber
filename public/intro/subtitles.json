@@ -1,0 +1,51 @@
+{
+  "act1Duration": 17.7,
+  "totalDuration": 39.6,
+  "cues": [
+    {
+      "start": 1.25,
+      "end": 3.75,
+      "text": "November 21st, 1898."
+    },
+    {
+      "start": 4.05,
+      "end": 7.6,
+      "text": "You answered my urgent midnight summons to the Royal Observatory —"
+    },
+    {
+      "start": 7.95,
+      "end": 10.65,
+      "text": "yet as you arrive, I am already gone."
+    },
+    {
+      "start": 11.1,
+      "end": 14.05,
+      "text": "The Great Conjunction passes at the stroke of twelve."
+    },
+    {
+      "start": 14.6,
+      "end": 16.65,
+      "text": "Someone else seeks what I have hidden here,"
+    },
+    {
+      "start": 17.05,
+      "end": 22.4,
+      "text": "so I sealed the ironbound Astrolabe Door behind you, and scattered the key across my instruments."
+    },
+    {
+      "start": 22.75,
+      "end": 25.85,
+      "text": "Begin at my writing desk, beneath the emerald lamp."
+    },
+    {
+      "start": 26.25,
+      "end": 31.85,
+      "text": "Follow my logbook through the Lunar Cryptex, the Great Telescope, and the Celestial Orrery."
+    },
+    {
+      "start": 32.4,
+      "end": 37.35,
+      "text": "Recover the Obsidian Star Key, and unseal the chamber before midnight."
+    }
+  ]
+}
