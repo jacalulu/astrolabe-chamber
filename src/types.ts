@@ -64,7 +64,61 @@ export const ZODIAC_NAMES = [
 
 export const TELESCOPE_DEC_STEPS = [0, 15, 30, 45, 60, 75] as const;
 
+export const COMPASS_BEARINGS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+
+export const STAR_IDS = [
+  'polaris',
+  'sirius',
+  'vega',
+  'betelgeuse',
+  'rigel',
+  'aldebaran',
+  'antares',
+  'deneb',
+] as const;
+
+export type DifficultyMode = 'apprentice' | 'scholar' | 'master';
+
+export type DoorCouplingMode = 'none' | 'cascade' | 'bidirectional';
+
+export interface LunarClueConfig {
+  heading: string;
+  lines: string[];
+  showAlmanacMarks: boolean;
+}
+
+export interface PuzzleConfig {
+  difficulty: DifficultyMode;
+  seed: number;
+  lunarSolution: [number, number, number, number];
+  lunarClues: LunarClueConfig;
+  telescopeTargetRA: number;
+  telescopeTargetDEC: number;
+  telescopeClueText: string;
+  starChartSolution: string[];
+  starChartOrderMatters: boolean;
+  eyepieceShowNames: boolean;
+  orrerySolution: { earth: number; mars: number; saturn: number };
+  orreryCoupled: boolean;
+  orreryStart: { earth: number; mars: number; saturn: number };
+  orreryEarthAnchor: number;
+  orreryClueLines: string[];
+  starChartShowDirectAnswer: boolean;
+  doorTarget: [number, number, number];
+  doorStart: [number, number, number];
+  doorCoupling: DoorCouplingMode;
+  doorAzimuthDegrees: number;
+  doorAzimuthLabel: string;
+  showLeadRibbon: boolean;
+  maxHints: number | null;
+}
+
 export interface GameStateSnapshot {
+  difficulty: DifficultyMode;
+  timedMode: boolean;
+  countdownDurationSeconds: number;
+  timeExpired: boolean;
+  puzzleConfig: PuzzleConfig;
   inventory: ItemId[];
   placedItems: ItemId[];
   selectedItem: ItemId | null;
@@ -101,6 +155,7 @@ export interface UIControllerOptions {
   onSkipDirectly?: () => void;
   onReplayIntro?: () => void;
   onVirtualMove?: (forward: number, strafe: number) => void;
+  onReturnToTitle?: () => void;
 }
 
 export interface SubtitleCue {
@@ -178,6 +233,8 @@ export interface GameStateAPI {
   startTimer: () => void;
   stopTimer: () => void;
   reset: () => void;
+  configureRun: (difficulty: DifficultyMode, timedMode?: boolean, seed?: number) => void;
+  continueUntimed: () => void;
 }
 
 export interface SoundEngineAPI {
@@ -207,6 +264,7 @@ export interface UIControllerAPI {
   showVictory: (elapsedSeconds: number, hintsUsed: number) => void;
   isModalOpen: () => boolean;
   dismissTitleVeil: () => void;
+  showTitleVeil: () => void;
   setHudVisible: (visible: boolean) => void;
   isTitleVeilVisible: () => boolean;
 }

@@ -9,7 +9,6 @@ import {
   type TextureBundle,
 } from '../../types';
 
-const LUNAR_SOLUTION: readonly [number, number, number, number] = [1, 4, 5, 0];
 const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV'] as const;
 
 function enableShadows(root: THREE.Object3D, cast = true, receive = true): void {
@@ -1030,7 +1029,9 @@ export function buildWritingDesk(textures: TextureBundle): PropModuleResult {
         ctx.audio.playBrassGear();
 
         const updated = ctx.state.get();
-        const isMatch = LUNAR_SOLUTION.every((target, idx) => updated.lunarDials[idx] === target);
+        const isMatch = updated.puzzleConfig.lunarSolution.every(
+          (target, idx) => updated.lunarDials[idx] === target
+        );
         if (isMatch) {
           ctx.state.markSolved('lunar_box');
           ctx.audio.playPuzzleSolved();

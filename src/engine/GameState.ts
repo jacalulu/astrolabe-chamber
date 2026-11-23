@@ -1,7 +1,44 @@
-import type { GameStateAPI, GameStateSnapshot, ItemId, PuzzleId } from '../types';
+import type {
+  DifficultyMode,
+  GameStateAPI,
+  GameStateSnapshot,
+  ItemId,
+  PuzzleConfig,
+  PuzzleId,
+} from '../types';
+import { generatePuzzleConfig } from './DifficultyConfig';
 
-export function createInitialGameState(): GameStateSnapshot {
+const DEFAULT_COUNTDOWN_SECONDS = 900; // 15-Minute Midnight Countdown
+
+function clonePuzzleConfig(cfg: PuzzleConfig): PuzzleConfig {
   return {
+    ...cfg,
+    lunarSolution: [...cfg.lunarSolution] as [number, number, number, number],
+    lunarClues: {
+      ...cfg.lunarClues,
+      lines: [...cfg.lunarClues.lines],
+    },
+    starChartSolution: [...cfg.starChartSolution],
+    orrerySolution: { ...cfg.orrerySolution },
+    orreryStart: { ...cfg.orreryStart },
+    orreryClueLines: [...cfg.orreryClueLines],
+    doorTarget: [...cfg.doorTarget] as [number, number, number],
+    doorStart: [...cfg.doorStart] as [number, number, number],
+  };
+}
+
+export function createInitialGameState(
+  difficulty: DifficultyMode = 'apprentice',
+  timedMode = false,
+  seed?: number
+): GameStateSnapshot {
+  const puzzleConfig = generatePuzzleConfig(difficulty, seed);
+  return {
+    difficulty,
+    timedMode: difficulty === 'master' ? Boolean(timedMode) : false,
+    countdownDurationSeconds: DEFAULT_COUNTDOWN_SECONDS,
+    timeExpired: false,
+    puzzleConfig,
     inventory: [],
     placedItems: [],
     selectedItem: null,
@@ -18,13 +55,9 @@ export function createInitialGameState(): GameStateSnapshot {
     telescopeDEC: 15,
     starChartSelected: [],
     orreryGearInstalled: false,
-    orreryAngles: {
-      earth: 3,
-      mars: 8,
-      saturn: 1,
-    },
+    orreryAngles: { ...puzzleConfig.orreryStart },
     doorKeyInserted: false,
-    doorRings: [3, 5, 2],
+    doorRings: [...puzzleConfig.doorStart] as [number, number, number],
     escaped: false,
     elapsedSeconds: 0,
     hintsUsed: 0,
@@ -41,6 +74,7 @@ export function createInitialGameState(): GameStateSnapshot {
 function cloneSnapshot(s: GameStateSnapshot): GameStateSnapshot {
   return {
     ...s,
+    puzzleConfig: clonePuzzleConfig(s.puzzleConfig),
     inventory: [...s.inventory],
     placedItems: [...s.placedItems],
     solved: { ...s.solved },
@@ -52,7 +86,7 @@ function cloneSnapshot(s: GameStateSnapshot): GameStateSnapshot {
 }
 
 export function createGameState(): GameStateAPI {
-  let state: GameStateSnapshot = createInitialGameState();
+  let state: GameStateSnapshot = createInitialGameState('apprentice', false);
   const listeners = new Set<(snapshot: Readonly<GameStateSnapshot>) => void>();
   let timerId: number | null = null;
 
@@ -71,13 +105,18 @@ export function createGameState(): GameStateAPI {
   };
 
   const startTimer = (): void => {
-    if (timerId !== null || state.escaped) return;
+    if (timerId !== null || state.escaped || state.timeExpired) return;
     timerId = window.setInterval(() => {
-      if (state.escaped) {
+      if (state.escaped || state.timeExpired) {
         stopTimer();
         return;
       }
       state.elapsedSeconds += 1;
+      if (state.timedMode && state.elapsedSeconds >= state.countdownDurationSeconds) {
+        state.elapsedSeconds = state.countdownDurationSeconds;
+        state.timeExpired = true;
+        stopTimer();
+      }
       notify();
     }, 1000);
   };
@@ -87,7 +126,7 @@ export function createGameState(): GameStateAPI {
 
     update: (mutator) => {
       mutator(state);
-      if (state.escaped) {
+      if (state.escaped || state.timeExpired) {
         stopTimer();
       }
       notify();
@@ -154,6 +193,8 @@ export function createGameState(): GameStateAPI {
     },
 
     incrementHints: () => {
+      const max = state.puzzleConfig.maxHints;
+      if (max !== null && state.hintsUsed >= max) return;
       state.hintsUsed += 1;
       notify();
     },
@@ -161,9 +202,22 @@ export function createGameState(): GameStateAPI {
     startTimer,
     stopTimer,
 
+    configureRun: (difficulty: DifficultyMode, timedMode = false, seed?: number) => {
+      stopTimer();
+      state = createInitialGameState(difficulty, timedMode, seed);
+      notify();
+    },
+
+    continueUntimed: () => {
+      state.timedMode = false;
+      state.timeExpired = false;
+      notify();
+      startTimer();
+    },
+
     reset: () => {
       stopTimer();
-      state = createInitialGameState();
+      state = createInitialGameState(state.difficulty, state.timedMode);
       notify();
     },
   };

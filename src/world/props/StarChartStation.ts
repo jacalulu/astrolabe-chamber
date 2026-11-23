@@ -9,8 +9,6 @@ import type {
   TextureBundle,
 } from '../../types';
 
-const REQUIRED_TRIAD = ['polaris', 'sirius', 'vega'] as const;
-
 function enableShadows(root: THREE.Object3D, cast = true, receive = true): void {
   root.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
@@ -315,6 +313,8 @@ export function buildStarChartStation(textures: TextureBundle): PropModuleResult
 
   const starNodes: Record<string, StarNodeVisual> = {};
   const starNodeInteractables: Interactable[] = [];
+  let flashErrorNode: string | null = null;
+  let flashErrorTimer = 0;
 
   for (const [starKey, info] of Object.entries(CONSTELLATION_STAR_COORDS)) {
     const lx = (info.u - 0.5) * plateW;
@@ -386,22 +386,72 @@ export function buildStarChartStation(textures: TextureBundle): PropModuleResult
       cursor: 'pointer',
       label: (s) => {
         const active = s.starChartSelected.includes(starKey);
+        if (active && s.puzzleConfig.starChartOrderMatters) {
+          const orderNum = s.starChartSelected.indexOf(starKey) + 1;
+          return `Star Node: ${info.label} (#${orderNum})`;
+        }
         return `Star Node: ${info.label}${active ? ' (Lit)' : ''}`;
       },
-      hint: (s) =>
-        s.solved.star_chart
-          ? 'Constellation circuit locked'
-          : s.starChartSelected.includes(starKey)
-            ? 'Click to extinguish'
-            : 'Click to illuminate star node',
+      hint: (s) => {
+        if (s.solved.star_chart) return 'Constellation circuit locked';
+        if (s.puzzleConfig.starChartOrderMatters) {
+          return s.starChartSelected.includes(starKey)
+            ? 'Locked in sequence'
+            : `Click in brightness pulse order (${s.starChartSelected.length + 1}/${s.puzzleConfig.starChartSolution.length})`;
+        }
+        return s.starChartSelected.includes(starKey)
+          ? 'Click to extinguish'
+          : 'Click to illuminate star node';
+      },
       focusTarget: lecternFocus,
       onInteract: (ctx) => {
         const snap = ctx.state.get();
         if (snap.solved.star_chart) {
           ctx.audio.playClick();
-          ctx.ui.showToast('The Triad of the North is locked into the Star Table.');
+          ctx.ui.showToast('The constellation circuit is locked into the Star Table.');
           return;
         }
+        const cfg = snap.puzzleConfig;
+        const targetStars = cfg.starChartSolution;
+
+        if (cfg.starChartOrderMatters) {
+          const expectedKey = targetStars[snap.starChartSelected.length];
+          if (starKey === expectedKey) {
+            ctx.state.update((d) => {
+              d.starChartSelected = [...d.starChartSelected, starKey];
+            });
+            const nextSelected = ctx.state.get().starChartSelected;
+            if (nextSelected.length === targetStars.length) {
+              ctx.state.markSolved('star_chart');
+              ctx.audio.playPuzzleSolved();
+              ctx.audio.playHeavyLatch();
+              ctx.ui.showToast(
+                'Constellation sequence complete! The Curio Cabinet door unlocks beside you!',
+                4800
+              );
+            } else {
+              ctx.audio.playClick();
+              ctx.ui.showToast(
+                `${info.label} locked (${nextSelected.length}/${targetStars.length}).`,
+                1600
+              );
+            }
+          } else {
+            ctx.audio.playError();
+            flashErrorNode = starKey;
+            flashErrorTimer = 0.78;
+            ctx.state.update((d) => {
+              d.starChartSelected = [];
+            });
+            ctx.ui.showToast(
+              'Wrong brightness sequence — watch the pulse order through the Telescope Eyepiece.',
+              3200
+            );
+          }
+          return;
+        }
+
+        // Unordered mode (Apprentice 3-star / Scholar 4-star exact set match)
         const already = snap.starChartSelected.includes(starKey);
         ctx.state.update((d) => {
           if (already) {
@@ -414,8 +464,8 @@ export function buildStarChartStation(textures: TextureBundle): PropModuleResult
 
         const nextSelected = ctx.state.get().starChartSelected;
         const solvedNow =
-          nextSelected.length === REQUIRED_TRIAD.length &&
-          REQUIRED_TRIAD.every((req) => nextSelected.includes(req));
+          nextSelected.length === targetStars.length &&
+          targetStars.every((req) => nextSelected.includes(req));
 
         if (solvedNow) {
           ctx.state.markSolved('star_chart');
@@ -857,15 +907,39 @@ export function buildStarChartStation(textures: TextureBundle): PropModuleResult
       ? 0.92 + Math.sin(elapsed * 2.4) * 0.06
       : 0.76 + Math.sin(elapsed * 1.5) * 0.03;
 
+    if (flashErrorTimer > 0) {
+      flashErrorTimer = Math.max(0, flashErrorTimer - delta);
+      if (flashErrorTimer === 0) {
+        flashErrorNode = null;
+      }
+    }
+
+    const targetStars = state.puzzleConfig.starChartSolution;
+
     // Update each of the 8 crystal star nodes
     for (const [key, node] of Object.entries(starNodes)) {
-      const lit = state.starChartSelected.includes(key) || (state.solved.star_chart && REQUIRED_TRIAD.includes(key as (typeof REQUIRED_TRIAD)[number]));
-      if (lit) {
+      const isFlashingError = flashErrorTimer > 0 && flashErrorNode === key;
+      const lit =
+        state.starChartSelected.includes(key) ||
+        (state.solved.star_chart && targetStars.includes(key));
+
+      if (isFlashingError) {
+        node.crystalMat.color.set('#ff6b7a');
+        node.crystalMat.emissive.set('#ff1838');
+        node.crystalMat.emissiveIntensity = 2.8 + Math.sin(elapsed * 28) * 0.6;
+        node.auraMat.color.set('#ff4558');
+        node.auraMat.emissive.set('#ff1838');
+        node.auraMat.emissiveIntensity = 2.2;
+        node.auraMat.opacity = 0.95;
+        node.auraRing.rotation.z = -elapsed * 5.0;
+      } else if (lit) {
         node.crystalMat.color.set('#fff3c4');
         node.crystalMat.emissive.set('#ffc642');
         node.crystalMat.emissiveIntensity = state.solved.star_chart
           ? 2.45 + Math.sin(elapsed * 3.8) * 0.25
           : 1.95 + Math.sin(elapsed * 3.0) * 0.2;
+        node.auraMat.color.set('#ffe082');
+        node.auraMat.emissive.set('#ffbe3b');
         node.auraMat.emissiveIntensity = 1.9;
         node.auraMat.opacity = 0.92;
         node.auraRing.rotation.z = elapsed * 1.6;
@@ -882,21 +956,19 @@ export function buildStarChartStation(textures: TextureBundle): PropModuleResult
 
     // Update dynamic glowing golden brass-energy filament lines connecting lit stars!
     const activeKeys = state.solved.star_chart
-      ? [...REQUIRED_TRIAD]
+      ? [...targetStars]
       : state.starChartSelected.filter((k) => Boolean(starNodes[k]));
 
     const pairs: Array<[THREE.Vector3, THREE.Vector3]> = [];
-    if (activeKeys.length === 2) {
+    if (state.puzzleConfig.starChartOrderMatters) {
+      // Master ordered path: trace sequentially 1 → 2 → 3 → 4 → 5!
+      for (let i = 0; i < Math.min(activeKeys.length - 1, MAX_BEAMS); i++) {
+        pairs.push([starNodes[activeKeys[i]].localPos, starNodes[activeKeys[i + 1]].localPos]);
+      }
+    } else if (activeKeys.length === 2) {
       pairs.push([starNodes[activeKeys[0]].localPos, starNodes[activeKeys[1]].localPos]);
-    } else if (activeKeys.length === 3) {
-      // Closed luminous triangle!
-      pairs.push(
-        [starNodes[activeKeys[0]].localPos, starNodes[activeKeys[1]].localPos],
-        [starNodes[activeKeys[1]].localPos, starNodes[activeKeys[2]].localPos],
-        [starNodes[activeKeys[2]].localPos, starNodes[activeKeys[0]].localPos]
-      );
-    } else if (activeKeys.length > 3) {
-      // Connect sequentially into a glowing circuit
+    } else if (activeKeys.length >= 3) {
+      // Closed luminous polygon circuit (3-star triangle on Apprentice, 4-star quad on Scholar)
       for (let i = 0; i < Math.min(activeKeys.length, MAX_BEAMS); i++) {
         const a = starNodes[activeKeys[i]].localPos;
         const b = starNodes[activeKeys[(i + 1) % activeKeys.length]].localPos;

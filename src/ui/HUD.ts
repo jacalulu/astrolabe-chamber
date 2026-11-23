@@ -1,5 +1,6 @@
 import {
   INVENTORY_CATALOG,
+  type DifficultyMode,
   type GameStateAPI,
   type GameStateSnapshot,
   type ItemId,
@@ -9,6 +10,12 @@ import {
   type UIControllerOptions,
 } from '../types';
 import { createPuzzleOverlays, formatTime } from './PuzzleOverlays';
+
+const DIFFICULTY_BLURBS: Record<DifficultyMode, string> = {
+  apprentice: 'Guided leads, marked almanac & direct alignments.',
+  scholar: 'Unmarked almanac, geometric aspects & cascading lock — no leads.',
+  master: 'Seeded ciphers, pulsing star order, coupled gears & 3 hint tokens.',
+};
 
 function getCurrentLeadText(snap: Readonly<GameStateSnapshot>): string {
   if (snap.escaped || snap.solved.exit_door) {
@@ -164,16 +171,45 @@ export function createUIController(
   hudRoot.className = 'hud-root hud-hidden';
   mount.appendChild(hudRoot);
 
-  const overlays = createPuzzleOverlays(mount, state, audio, () => {
-    onboardingDismissed = false;
-    if (onboardingFadeTimer !== null) {
-      window.clearTimeout(onboardingFadeTimer);
-      onboardingFadeTimer = null;
+  const overlays = createPuzzleOverlays(
+    mount,
+    state,
+    audio,
+    () => {
+      onboardingDismissed = false;
+      timeoutDialogShown = false;
+      if (onboardingFadeTimer !== null) {
+        window.clearTimeout(onboardingFadeTimer);
+        onboardingFadeTimer = null;
+      }
+      onResetGame();
+    },
+    (mode, timed) => {
+      onboardingDismissed = false;
+      timeoutDialogShown = false;
+      if (onboardingFadeTimer !== null) {
+        window.clearTimeout(onboardingFadeTimer);
+        onboardingFadeTimer = null;
+      }
+      onResetGame();
+      state.configureRun(mode, timed);
+      state.startTimer();
+      const label =
+        mode === 'master'
+          ? timed
+            ? 'Master Astronomer (15-Min Midnight Countdown)'
+            : 'Master Astronomer'
+          : mode === 'scholar'
+            ? 'Scholar'
+            : 'Apprentice';
+      showToast(`New run started: ${label}`);
     }
-    onResetGame();
-  });
+  );
 
   let titleVeilDismissed = false;
+  let selectedMode: DifficultyMode = state.get().difficulty;
+  let selectedTimed = state.get().timedMode;
+  let timeoutDialogShown = false;
   let controlsOpen = false;
   let leadCollapsed = false;
   let onboardingDismissed = false;
@@ -183,7 +219,7 @@ export function createUIController(
   let toastTimeout: number | null = null;
 
   // =========================================================================
-  // MINIMALIST CINEMA OPENING TITLE VEIL
+  // MINIMALIST CINEMA OPENING TITLE VEIL + 3-TIER DIFFICULTY SELECTOR
   // =========================================================================
   const titleVeil = document.createElement('div');
   titleVeil.className = 'title-veil';
@@ -204,6 +240,18 @@ export function createUIController(
           <polygon points="12,1 14.8,9.2 23,12 14.8,14.8 12,23 9.2,14.8 1,12 9.2,9.2"/>
         </svg>
         <span class="title-divider-line"></span>
+      </div>
+      <div class="title-difficulty-wrap">
+        <div class="difficulty-segmented" role="radiogroup" aria-label="Select difficulty mode">
+          <button type="button" class="difficulty-tab is-selected" role="radio" aria-checked="true" data-diff-btn="apprentice">Apprentice</button>
+          <button type="button" class="difficulty-tab" role="radio" aria-checked="false" data-diff-btn="scholar">Scholar</button>
+          <button type="button" class="difficulty-tab" role="radio" aria-checked="false" data-diff-btn="master">Master</button>
+        </div>
+        <p class="difficulty-blurb" data-diff-blurb>${DIFFICULTY_BLURBS.apprentice}</p>
+        <label class="master-countdown-row" data-master-countdown-row hidden>
+          <input type="checkbox" class="master-countdown-checkbox" data-master-countdown-input />
+          <span>15-Minute Midnight Countdown</span>
+        </label>
       </div>
       <div class="title-cta-stack">
         <button type="button" class="btn-brass-primary title-begin-btn" data-begin-btn>
@@ -228,6 +276,7 @@ export function createUIController(
       <div class="hud-glass-pill" aria-label="Observatory status">
         <span class="hud-chamber-title">Astrolabe Chamber</span>
         <span class="hud-vdiv" aria-hidden="true"></span>
+        <span class="hud-tier-badge" data-hud-tier-badge hidden></span>
         <span class="hud-timer" data-hud-timer aria-label="Elapsed time">00:00</span>
         <span class="hud-vdiv" aria-hidden="true"></span>
         <div class="hud-constellation-progress" data-hud-stars aria-label="Puzzle progress">
@@ -297,12 +346,21 @@ export function createUIController(
           ></button>
         </div>
         <div class="controls-divider" aria-hidden="true"></div>
-        <button type="button" class="controls-action-btn" data-replay-intro-btn>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="6 4 20 12 6 20 6 4"/>
-          </svg>
-          <span>Replay Opening Cinematic</span>
-        </button>
+        <div class="controls-action-stack">
+          <button type="button" class="controls-action-btn" data-replay-intro-btn>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="6 4 20 12 6 20 6 4"/>
+            </svg>
+            <span>Replay Opening Cinematic</span>
+          </button>
+          <button type="button" class="controls-action-btn" data-change-difficulty-btn>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            <span>Change Difficulty / New Run</span>
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -436,6 +494,11 @@ export function createUIController(
   // Element references
   const beginBtn = titleVeil.querySelector<HTMLButtonElement>('[data-begin-btn]')!;
   const skipDirectBtn = titleVeil.querySelector<HTMLButtonElement>('[data-skip-direct-btn]')!;
+  const diffTabBtns = Array.from(titleVeil.querySelectorAll<HTMLButtonElement>('[data-diff-btn]'));
+  const diffBlurbEl = titleVeil.querySelector<HTMLElement>('[data-diff-blurb]')!;
+  const masterCountdownRow = titleVeil.querySelector<HTMLElement>('[data-master-countdown-row]')!;
+  const masterCountdownInput = titleVeil.querySelector<HTMLInputElement>('[data-master-countdown-input]')!;
+  const tierBadgeEl = topbar.querySelector<HTMLElement>('[data-hud-tier-badge]')!;
   const timerEl = topbar.querySelector<HTMLElement>('[data-hud-timer]')!;
   const leadRibbonEl = topbar.querySelector<HTMLElement>('[data-lead-ribbon]')!;
   const leadKickerEl = topbar.querySelector<HTMLElement>('[data-lead-kicker]')!;
@@ -447,6 +510,7 @@ export function createUIController(
   const controlsPopover = topbar.querySelector<HTMLElement>('[data-controls-popover]')!;
   const invertDragBtn = topbar.querySelector<HTMLButtonElement>('[data-invert-drag-btn]')!;
   const replayIntroBtn = topbar.querySelector<HTMLButtonElement>('[data-replay-intro-btn]')!;
+  const changeDifficultyBtn = topbar.querySelector<HTMLButtonElement>('[data-change-difficulty-btn]')!;
   const muteBtn = topbar.querySelector<HTMLButtonElement>('[data-mute-btn]')!;
   const onboardDragChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-drag]')!;
   const onboardWalkChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-walk]')!;
@@ -516,10 +580,40 @@ export function createUIController(
     }
   }
 
+  function syncDifficultySelectorUI(): void {
+    diffTabBtns.forEach((btn) => {
+      const mode = btn.dataset.diffBtn as DifficultyMode;
+      const isSelected = mode === selectedMode;
+      btn.classList.toggle('is-selected', isSelected);
+      btn.setAttribute('aria-checked', String(isSelected));
+    });
+    diffBlurbEl.textContent = DIFFICULTY_BLURBS[selectedMode];
+    masterCountdownRow.hidden = selectedMode !== 'master';
+    masterCountdownInput.checked = selectedMode === 'master' && selectedTimed;
+  }
+
   function dismissTitleVeil(): void {
     if (titleVeilDismissed) return;
     titleVeilDismissed = true;
     titleVeil.classList.add('is-dismissed');
+  }
+
+  function showTitleVeil(): void {
+    const snap = state.get();
+    selectedMode = snap.difficulty;
+    selectedTimed = snap.timedMode;
+    syncDifficultySelectorUI();
+    overlays.resetHintsProgress();
+    timeoutDialogShown = false;
+    onboardingDismissed = false;
+    if (onboardingFadeTimer !== null) {
+      window.clearTimeout(onboardingFadeTimer);
+      onboardingFadeTimer = null;
+    }
+    titleVeilDismissed = false;
+    titleVeil.classList.remove('is-dismissed');
+    setHudVisible(false);
+    setFocusBanner(null);
   }
 
   function setControlsOpen(open: boolean): void {
@@ -574,8 +668,45 @@ export function createUIController(
   }
 
   function renderState(snap: Readonly<GameStateSnapshot>): void {
-    timerEl.textContent = formatTime(snap.elapsedSeconds);
-    leadTextEl.textContent = getCurrentLeadText(snap);
+    // Tier badge inside top-left pill (Scholar / Master only)
+    if (snap.difficulty === 'apprentice') {
+      tierBadgeEl.hidden = true;
+      tierBadgeEl.textContent = '';
+      tierBadgeEl.classList.remove('is-scholar', 'is-master');
+    } else {
+      tierBadgeEl.hidden = false;
+      tierBadgeEl.textContent = snap.difficulty === 'scholar' ? 'Scholar' : 'Master';
+      tierBadgeEl.classList.toggle('is-scholar', snap.difficulty === 'scholar');
+      tierBadgeEl.classList.toggle('is-master', snap.difficulty === 'master');
+    }
+
+    // Countdown vs stopwatch timer
+    if (snap.timedMode) {
+      const remaining = Math.max(0, snap.countdownDurationSeconds - snap.elapsedSeconds);
+      timerEl.textContent = formatTime(remaining);
+      timerEl.setAttribute('aria-label', 'Countdown remaining until midnight');
+      timerEl.classList.toggle('is-warning', remaining < 180 && remaining >= 60);
+      timerEl.classList.toggle('is-critical', remaining < 60);
+    } else {
+      timerEl.textContent = formatTime(snap.elapsedSeconds);
+      timerEl.setAttribute('aria-label', 'Elapsed time');
+      timerEl.classList.remove('is-warning', 'is-critical');
+    }
+
+    // Trigger Midnight Has Struck dialog once when timed run expires
+    if (snap.timeExpired && !snap.escaped && !timeoutDialogShown) {
+      timeoutDialogShown = true;
+      audio.playHeavyLatch();
+      overlays.openTimeoutDialog();
+    } else if (!snap.timeExpired) {
+      timeoutDialogShown = false;
+    }
+
+    // Lead ribbon shown ONLY when puzzleConfig.showLeadRibbon is true (Apprentice)
+    leadRibbonEl.hidden = !snap.puzzleConfig.showLeadRibbon;
+    if (snap.puzzleConfig.showLeadRibbon) {
+      leadTextEl.textContent = getCurrentLeadText(snap);
+    }
 
     onboardDragChip.classList.toggle('is-done', Boolean(snap.hasDraggedLook));
     onboardWalkChip.classList.toggle('is-done', Boolean(snap.hasWalked));
@@ -653,7 +784,30 @@ export function createUIController(
   // =========================================================================
   // EVENT LISTENERS
   // =========================================================================
+  diffTabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.diffBtn as DifficultyMode | undefined;
+      if (!mode) return;
+      selectedMode = mode;
+      if (mode !== 'master') {
+        selectedTimed = false;
+      }
+      audio.playClick();
+      syncDifficultySelectorUI();
+    });
+  });
+
+  masterCountdownInput.addEventListener('change', () => {
+    selectedTimed = masterCountdownInput.checked;
+    audio.playClick();
+  });
+
+  syncDifficultySelectorUI();
+
   beginBtn.addEventListener('click', () => {
+    overlays.resetHintsProgress();
+    timeoutDialogShown = false;
+    state.configureRun(selectedMode, selectedMode === 'master' && selectedTimed);
     if (options?.onBeginIntro) {
       options.onBeginIntro();
     } else {
@@ -666,6 +820,9 @@ export function createUIController(
   });
 
   skipDirectBtn.addEventListener('click', () => {
+    overlays.resetHintsProgress();
+    timeoutDialogShown = false;
+    state.configureRun(selectedMode, selectedMode === 'master' && selectedTimed);
     if (options?.onSkipDirectly) {
       options.onSkipDirectly();
       audio.playClick();
@@ -682,6 +839,16 @@ export function createUIController(
     setControlsOpen(false);
     audio.playClick();
     options?.onReplayIntro?.();
+  });
+
+  changeDifficultyBtn.addEventListener('click', () => {
+    setControlsOpen(false);
+    audio.playClick();
+    if (options?.onReturnToTitle) {
+      options.onReturnToTitle();
+    } else {
+      showTitleVeil();
+    }
   });
 
   journalBtn.addEventListener('click', () => {
@@ -908,6 +1075,7 @@ export function createUIController(
     },
     isModalOpen: () => !titleVeilDismissed || overlays.isAnyOpen(),
     dismissTitleVeil,
+    showTitleVeil,
     setHudVisible,
     isTitleVeilVisible: () => !titleVeilDismissed,
   };

@@ -747,10 +747,11 @@ export function buildTelescope(textures: TextureBundle): PropModuleResult {
             d.telescopeLensInstalled = true;
           });
           ctx.audio.playHeavyLatch();
-          ctx.ui.showToast(
-            'Sapphire Objective Lens seated! Adjust RA 04h & DEC +45° and peer through the eyepiece.',
-            4600
-          );
+          const msg =
+            snap.puzzleConfig.difficulty === 'apprentice'
+              ? 'Sapphire Objective Lens seated! Adjust RA 04h & DEC +45° and peer through the eyepiece.'
+              : 'Sapphire Objective Lens seated! Deduce the RA & DEC coordinates from Dr. Vance’s Logbook, then peer through the eyepiece.';
+          ctx.ui.showToast(msg, 4600);
           if (ctx.getFocusedStation() !== telescopeFocus.id) {
             ctx.focusOn(telescopeFocus);
           }
@@ -831,14 +832,19 @@ export function buildTelescope(textures: TextureBundle): PropModuleResult {
           );
           return;
         }
-        const aligned = snap.telescopeRA === 4 && snap.telescopeDEC === 45;
+        const cfg = snap.puzzleConfig;
+        const aligned =
+          snap.telescopeRA === cfg.telescopeTargetRA &&
+          snap.telescopeDEC === cfg.telescopeTargetDEC;
         if (aligned && !snap.solved.telescope) {
           ctx.state.markSolved('telescope');
           ctx.audio.playPuzzleSolved();
-          ctx.ui.showToast(
-            'Celestial Triad revealed! Polaris, Sirius & Vega blaze through the Sapphire Lens.',
-            4500
-          );
+          const alignedMsg = cfg.eyepieceShowNames
+            ? 'Celestial Triad revealed! Polaris, Sirius & Vega blaze through the Sapphire Lens.'
+            : cfg.starChartOrderMatters
+              ? 'Constellation sequence locked! Observe the 5-star pulse order and Azimuth target.'
+              : 'Constellation geometry locked! Match the 4-star pattern onto the Backlit Star Table.';
+          ctx.ui.showToast(alignedMsg, 4800);
         } else {
           ctx.audio.playClick();
         }
@@ -860,8 +866,8 @@ export function buildTelescope(textures: TextureBundle): PropModuleResult {
   const update = (elapsed: number, delta: number, state: Readonly<GameStateSnapshot>): void => {
     const smooth = 1 - Math.exp(-5.5 * delta);
 
-    // At RA 04h, telescope points dead-North (-Z) straight through the dome shutter slit!
-    const targetRAYaw = (4 - state.telescopeRA) * 0.125;
+    // At target RA, telescope points dead-North (-Z) straight through the dome shutter slit!
+    const targetRAYaw = (state.puzzleConfig.telescopeTargetRA - state.telescopeRA) * 0.125;
     currentRAYaw += (targetRAYaw - currentRAYaw) * smooth;
     raPivot.rotation.y = currentRAYaw;
 
@@ -886,7 +892,9 @@ export function buildTelescope(textures: TextureBundle): PropModuleResult {
       emptyLensGlowMat.emissiveIntensity = 0.72 + Math.sin(elapsed * 3.2) * 0.35;
     }
     if (state.telescopeLensInstalled) {
-      const aligned = state.telescopeRA === 4 && state.telescopeDEC === 45;
+      const aligned =
+        state.telescopeRA === state.puzzleConfig.telescopeTargetRA &&
+        state.telescopeDEC === state.puzzleConfig.telescopeTargetDEC;
       installedSapphireMat.emissiveIntensity = aligned
         ? 1.85 + Math.sin(elapsed * 3.5) * 0.25
         : 0.95 + Math.sin(elapsed * 2.0) * 0.12;

@@ -1,5 +1,5 @@
 import './ui/styles.css';
-import type { GameStateSnapshot, IntroAct } from './types';
+import type { DifficultyMode, GameStateSnapshot, IntroAct, PuzzleConfig } from './types';
 import { createGameState } from './engine/GameState';
 import { SceneManager } from './engine/SceneManager';
 import { PostProcessing } from './engine/PostProcessing';
@@ -34,6 +34,8 @@ export interface GameDebugAPI {
   }>;
   dismissTitle: () => void;
   setHudVisible: (visible: boolean) => void;
+  configureRun: (difficulty: DifficultyMode, timedMode?: boolean, seed?: number) => void;
+  getPuzzleConfig: () => Readonly<PuzzleConfig>;
   playIntro: () => void;
   skipIntro: () => void;
   setIntroTime: (seconds: number) => void;
@@ -344,6 +346,19 @@ function bootstrap(): void {
         wakeActivity();
         controls?.setVirtualMove(forward, strafe);
       },
+      onReturnToTitle: () => {
+        wakeActivity();
+        if (introDirector?.isPlaying()) {
+          introDirector.skip();
+        }
+        state.stopTimer();
+        controls?.focusOn(null);
+        controls?.resetToSpawn();
+        ui.setFocusBanner(null);
+        ui.setHudVisible(false);
+        ui.showTitleVeil();
+        sceneManager.requestShadowUpdate();
+      },
     }
   );
 
@@ -470,6 +485,14 @@ function bootstrap(): void {
     setHudVisible: (visible) => {
       ui.setHudVisible(visible);
     },
+    configureRun: (difficulty, timedMode = false, seed) => {
+      wakeActivity();
+      activeControls.focusOn(null);
+      state.configureRun(difficulty, timedMode, seed);
+      sceneManager.requestShadowUpdate();
+      renderNow();
+    },
+    getPuzzleConfig: () => state.get().puzzleConfig,
     playIntro: () => {
       startHybridIntro(false);
     },

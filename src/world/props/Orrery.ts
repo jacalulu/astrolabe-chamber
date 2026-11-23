@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyOrreryRingClick } from '../../engine/DifficultyConfig';
 import {
   ZODIAC_NAMES,
   type ColliderBox,
@@ -8,12 +9,6 @@ import {
   type PropModuleResult,
   type TextureBundle,
 } from '../../types';
-
-const ORRERY_SOLUTION = {
-  earth: 0, // Aries
-  mars: 4, // Leo
-  saturn: 10, // Aquarius
-} as const;
 
 function enableShadows(root: THREE.Object3D, cast = true, receive = true): void {
   root.traverse((obj) => {
@@ -918,11 +913,12 @@ export function buildOrrery(textures: TextureBundle): PropModuleResult {
 
   const checkOrrerySolved = (ctx: Parameters<Interactable['onInteract']>[0]): void => {
     const snap = ctx.state.get();
+    const sol = snap.puzzleConfig.orrerySolution;
     if (
       snap.orreryGearInstalled &&
-      snap.orreryAngles.earth === ORRERY_SOLUTION.earth &&
-      snap.orreryAngles.mars === ORRERY_SOLUTION.mars &&
-      snap.orreryAngles.saturn === ORRERY_SOLUTION.saturn
+      snap.orreryAngles.earth === sol.earth &&
+      snap.orreryAngles.mars === sol.mars &&
+      snap.orreryAngles.saturn === sol.saturn
     ) {
       ctx.state.markSolved('orrery');
       ctx.audio.playPuzzleSolved();
@@ -956,6 +952,11 @@ export function buildOrrery(textures: TextureBundle): PropModuleResult {
       if (planet === 'saturn' && !s.orreryGearInstalled) {
         return 'Missing drive gear on the empty foreground spindle';
       }
+      if (s.puzzleConfig.orreryCoupled) {
+        if (planet === 'saturn') return 'Coupled gear: +1 Saturn, +2 Mars';
+        if (planet === 'mars') return 'Coupled gear: +1 Mars, +1 Earth';
+        return 'Free gear: +1 Earth';
+      }
       return 'Click to rotate +30° (1 Zodiac House)';
     },
     focusTarget: orreryFocus,
@@ -974,15 +975,28 @@ export function buildOrrery(textures: TextureBundle): PropModuleResult {
         );
         return;
       }
-      const nextIdx = (snap.orreryAngles[planet] + 1) % 12;
+      const coupled = snap.puzzleConfig.orreryCoupled;
+      const next = applyOrreryRingClick(snap.orreryAngles, planet, coupled);
       ctx.state.update((d) => {
-        d.orreryAngles[planet] = nextIdx;
+        d.orreryAngles = next;
       });
       ctx.audio.playBrassGear();
-      ctx.ui.showToast(
-        `${displayName} aligned to ${ZODIAC_NAMES[nextIdx].toUpperCase()} (${nextIdx * 30}°)`,
-        2000
-      );
+      if (coupled && planet === 'saturn') {
+        ctx.ui.showToast(
+          `Saturn → ${ZODIAC_NAMES[next.saturn].toUpperCase()} (${next.saturn * 30}°) · Coupled Mars → ${ZODIAC_NAMES[next.mars].toUpperCase()}`,
+          2400
+        );
+      } else if (coupled && planet === 'mars') {
+        ctx.ui.showToast(
+          `Mars → ${ZODIAC_NAMES[next.mars].toUpperCase()} (${next.mars * 30}°) · Coupled Earth → ${ZODIAC_NAMES[next.earth].toUpperCase()}`,
+          2400
+        );
+      } else {
+        ctx.ui.showToast(
+          `${displayName} aligned to ${ZODIAC_NAMES[next[planet]].toUpperCase()} (${next[planet] * 30}°)`,
+          2000
+        );
+      }
       checkOrrerySolved(ctx);
     },
   });

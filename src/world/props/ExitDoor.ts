@@ -1,13 +1,79 @@
 import * as THREE from 'three';
-import type {
-  ColliderBox,
-  FocusTarget,
-  GameStateSnapshot,
-  Interactable,
-  PropModuleResult,
-  TextureBundle,
-  UIControllerAPI,
+import { applyDoorRingClick } from '../../engine/DifficultyConfig';
+import {
+  COMPASS_BEARINGS,
+  type ColliderBox,
+  type FocusTarget,
+  type GameStateSnapshot,
+  type Interactable,
+  type PropModuleResult,
+  type TextureBundle,
+  type UIControllerAPI,
 } from '../../types';
+
+function createCompassBezelTexture(): THREE.CanvasTexture {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // Dark enameled outer compass track between r=212 and r=254
+  ctx.beginPath();
+  ctx.arc(cx, cy, 254, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 212, 0, Math.PI * 2, true);
+  ctx.fillStyle = '#18120a';
+  ctx.fill();
+
+  // Crisp gold border rings
+  for (const r of [252, 214]) {
+    ctx.strokeStyle = '#dfb860';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Fine 15-degree tick marks around the compass bezel
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2 - Math.PI / 2;
+    const isMajor = i % 3 === 0;
+    const r0 = isMajor ? 214 : 220;
+    const r1 = isMajor ? 228 : 228;
+    ctx.strokeStyle = isMajor ? '#ffe79e' : 'rgba(220, 185, 108, 0.55)';
+    ctx.lineWidth = isMajor ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+
+  // 8 crisp clockwise compass bearings (N at 12 o'clock -> NE -> E -> SE -> S -> SW -> W -> NW)
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  COMPASS_BEARINGS.forEach((label, idx) => {
+    const a = idx * (Math.PI / 4) - Math.PI / 2;
+    const rx = cx + Math.cos(a) * 238;
+    const ry = cy + Math.sin(a) * 238;
+    ctx.save();
+    ctx.translate(rx, ry);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.fillStyle = idx === 0 ? '#ffe9a8' : '#e6c678';
+    ctx.font = idx % 2 === 0 ? 'bold 20px Georgia, serif' : 'bold 16px Georgia, serif';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  });
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 function enableShadows(root: THREE.Object3D, cast = true, receive = true): void {
   root.traverse((obj) => {
@@ -433,11 +499,27 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
   outerBezel.position.z = 0.015;
   sealGroup.add(outerBezel);
 
-  // 12 heavy brass mounting rivets around fixed bezel
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), polishedBrassMat);
-    rivet.position.set(Math.cos(a) * 0.545, Math.sin(a) * 0.545, 0.054);
+  // Engraved 8-bearing azimuth compass ring (N, NE, E, SE, S, SW, W, NW) flush on outer bezel
+  const compassRingMesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.502, 0.59, 64),
+    new THREE.MeshStandardMaterial({
+      map: createCompassBezelTexture(),
+      transparent: true,
+      roughness: 0.42,
+      metalness: 0.62,
+      envMapIntensity: 0.4,
+    })
+  );
+  compassRingMesh.position.z = 0.056;
+  compassRingMesh.castShadow = false;
+  compassRingMesh.userData.interactableId = 'exit_door_seal';
+  sealGroup.add(compassRingMesh);
+
+  // 8 heavy brass mounting rivets around outer perimeter between bearings
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.015, 10, 8), polishedBrassMat);
+    rivet.position.set(Math.cos(a) * 0.565, Math.sin(a) * 0.565, 0.058);
     sealGroup.add(rivet);
   }
 
@@ -599,13 +681,25 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
       label: spec.name,
       getLabel: (s) => {
         if (!s.doorKeyInserted) return `${spec.name} (Locked)`;
-        const deg = s.doorRings[idx] * 45;
-        return `${spec.name} (${deg === 0 ? 'Aligned 12:00' : `${deg}°`})`;
+        const step = s.doorRings[idx];
+        const dir = COMPASS_BEARINGS[step];
+        return `${spec.name} — ${dir} (${step * 45}°)`;
       },
       getHint: (s) => {
         if (s.solved.exit_door) return 'Seal unlocked';
         if (!s.doorKeyInserted) return 'Locked — seat the star key in the center keyhole hub first';
-        return 'Click to rotate +45° toward the Crimson Ruby';
+        const coupling = s.puzzleConfig.doorCoupling;
+        if (coupling === 'cascade') {
+          if (idx === 0) return 'Linked ring: rotates Outer + Middle (+45°)';
+          if (idx === 1) return 'Linked ring: rotates Middle + Inner (+45°)';
+          return 'Free ring: rotates Inner (+45°)';
+        }
+        if (coupling === 'bidirectional') {
+          if (idx === 0) return 'Coupled ring: rotates Outer + Middle (+45°)';
+          if (idx === 1) return 'Coupled ring: rotates All 3 Rings (+45°)';
+          return 'Coupled ring: rotates Middle + Inner (+45°)';
+        }
+        return 'Click to rotate +45° toward the Crimson Ruby (N)';
       },
       focusTarget: doorFocus,
       onInteract: (ctx) => {
@@ -619,17 +713,19 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
           );
           return;
         }
-        const nextVal = (snap.doorRings[idx] + 1) % 8;
+        const coupling = snap.puzzleConfig.doorCoupling;
+        const nextRings = applyDoorRingClick(snap.doorRings, idx as 0 | 1 | 2, coupling);
         ctx.state.update((d) => {
-          d.doorRings[idx] = nextVal;
+          d.doorRings = nextRings;
         });
         ctx.audio.playBrassGear();
 
         const updated = ctx.state.get();
+        const target = updated.puzzleConfig.doorTarget;
         const alignedAll =
-          updated.doorRings[0] === 0 &&
-          updated.doorRings[1] === 0 &&
-          updated.doorRings[2] === 0;
+          updated.doorRings[0] === target[0] &&
+          updated.doorRings[1] === target[1] &&
+          updated.doorRings[2] === target[2];
 
         if (alignedAll) {
           ctx.state.markSolved('exit_door');
@@ -647,10 +743,19 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
           victoryTimer = 1.8;
           victoryShown = false;
         } else {
-          ctx.ui.showToast(
-            `${spec.name}: ${nextVal === 0 ? 'Aligned with Crimson Ruby!' : `${nextVal * 45}°`}`,
-            1600
-          );
+          const b0 = COMPASS_BEARINGS[updated.doorRings[0]];
+          const b1 = COMPASS_BEARINGS[updated.doorRings[1]];
+          const b2 = COMPASS_BEARINGS[updated.doorRings[2]];
+          if (coupling === 'none') {
+            const step = updated.doorRings[idx];
+            const dir = COMPASS_BEARINGS[step];
+            ctx.ui.showToast(`${spec.name}: ${dir} (${step * 45}°)`, 1600);
+          } else {
+            ctx.ui.showToast(
+              `Bearings — Outer: ${b0} (${updated.doorRings[0] * 45}°) · Mid: ${b1} (${updated.doorRings[1] * 45}°) · Inner: ${b2} (${updated.doorRings[2] * 45}°)`,
+              2200
+            );
+          }
         }
       },
     });
@@ -885,7 +990,11 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
       getLabel: (s) =>
         s.doorKeyInserted ? 'Obsidian Star Key (Seated)' : 'Empty Star Keyhole Hub',
       getHint: (s) => {
-        if (s.doorKeyInserted) return 'Rotate the 3 Astrolabe rings to 12 o’clock';
+        if (s.doorKeyInserted) {
+          return s.puzzleConfig.doorTarget[0] === 0
+            ? 'Rotate the 3 Astrolabe rings to the Crimson Ruby (N)'
+            : 'Align all 3 rings to the Telescope’s Azimuth bearing';
+        }
         if (s.selectedItem === 'obsidian_key') return 'Click to seat Obsidian Star Key';
         return 'Select the right artifact from your tray to fit';
       },
@@ -894,9 +1003,11 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
         const snap = ctx.state.get();
         if (snap.doorKeyInserted) {
           ctx.audio.playClick();
-          ctx.ui.showToast(
-            'The Obsidian Star Key is seated. Align all 3 gold meridian bars to the Crimson Ruby.'
-          );
+          const msg =
+            snap.puzzleConfig.doorTarget[0] === 0
+              ? 'The Obsidian Star Key is seated. Align all 3 gold meridian bars to the Crimson Ruby (N · 0°).'
+              : 'The Obsidian Star Key is seated. Align all 3 coupled rings to the Azimuth bearing etched in the Telescope Eyepiece.';
+          ctx.ui.showToast(msg, 3600);
           return;
         }
         if (snap.selectedItem === 'obsidian_key') {
@@ -905,10 +1016,11 @@ export function buildExitDoor(textures: TextureBundle): PropModuleResult {
             d.doorKeyInserted = true;
           });
           ctx.audio.playHeavyLatch();
-          ctx.ui.showToast(
-            'The Obsidian Star Key clicks home! Now align all 3 Astrolabe rings to the Crimson Ruby.',
-            4500
-          );
+          const msg =
+            snap.puzzleConfig.doorTarget[0] === 0
+              ? 'The Obsidian Star Key clicks home! Now align all 3 Astrolabe rings to the Crimson Ruby (N · 0°).'
+              : 'The Obsidian Star Key clicks home! Align all 3 coupled rings to the Azimuth bearing from the Telescope Eyepiece.';
+          ctx.ui.showToast(msg, 4500);
           if (ctx.getFocusedStation() !== doorFocus.id) {
             ctx.focusOn(doorFocus);
           }
