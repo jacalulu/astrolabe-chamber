@@ -11,8 +11,8 @@ import type { Controls } from './Controls';
 
 const DEFAULT_MAX_REACH = 3.6;
 const FAR_HINT_MAX_DISTANCE = 9.0;
-const MAX_CLICK_DRAG_PATH_PX = 4;
-const MAX_CLICK_DURATION_MS = 350;
+const MAX_CLICK_DRAG_PATH_PX = 10;
+const MAX_CLICK_DURATION_MS = 550;
 
 interface PickResult {
   item: Interactable;

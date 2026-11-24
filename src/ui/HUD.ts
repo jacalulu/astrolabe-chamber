@@ -54,7 +54,7 @@ function getCurrentLeadText(snap: Readonly<GameStateSnapshot>): string {
   if (snap.hasReadLogbook) {
     return 'Check the Lunar Almanac (SW wall) to unlock the 4-dial Cryptex Box on the desk.';
   }
-  return 'Inspect Dr. Vance’s open Logbook on the Writing Desk (right).';
+  return 'Click Dr. Vance’s open Logbook on the Writing Desk (right) to read it.';
 }
 
 const PUZZLE_PROGRESS_ORDER: Array<{ id: PuzzleId; label: string }> = [
@@ -328,22 +328,25 @@ export function createUIController(
         <h3 class="controls-popover-title">Observatory Controls</h3>
         <ul class="controls-list">
           <li><span>Walk</span><kbd class="hud-kbd">W A S D / Arrows</kbd></li>
+          <li><span>Turn Left / Right</span><kbd class="hud-kbd">Q / E</kbd></li>
           <li><span>Look 360°</span><kbd class="hud-kbd">Click &amp; Drag</kbd></li>
           <li><span>Inspect / Use</span><kbd class="hud-kbd">Left Click</kbd></li>
           <li><span>Step Back</span><kbd class="hud-kbd">Esc</kbd></li>
           <li><span>Select Artifact</span><kbd class="hud-kbd">Click Slot / 1-3</kbd></li>
         </ul>
         <div class="controls-divider" aria-hidden="true"></div>
-        <div class="controls-setting-row">
-          <span>Invert Drag Look</span>
-          <button
-            type="button"
-            class="controls-switch"
-            role="switch"
-            aria-checked="false"
-            aria-label="Invert drag look direction"
-            data-invert-drag-btn
-          ></button>
+        <div class="controls-look-group">
+          <span class="controls-look-label">Look Style</span>
+          <div class="controls-look-segmented" role="radiogroup" aria-label="Drag look style">
+            <button type="button" class="controls-look-btn is-active" role="radio" aria-checked="true" data-look-mode="grab">
+              <span>Grab World</span>
+              <small>Trackpad</small>
+            </button>
+            <button type="button" class="controls-look-btn" role="radio" aria-checked="false" data-look-mode="fps">
+              <span>Mouse Look</span>
+              <small>FPS</small>
+            </button>
+          </div>
         </div>
         <div class="controls-divider" aria-hidden="true"></div>
         <div class="controls-action-stack">
@@ -376,6 +379,7 @@ export function createUIController(
     <div class="onboard-chip" data-onboard-drag>
       <span class="onboard-check" aria-hidden="true">✓</span>
       <span><kbd class="hud-kbd">Drag</kbd> to look around</span>
+      <button type="button" class="onboard-flip-btn" data-onboard-flip-drag aria-label="Flip drag look direction" title="Switch between Grab World and Mouse Look">⇄ Flip</button>
     </div>
     <div class="onboard-chip" data-onboard-walk>
       <span class="onboard-check" aria-hidden="true">✓</span>
@@ -508,11 +512,12 @@ export function createUIController(
   const journalBtn = topbar.querySelector<HTMLButtonElement>('[data-journal-btn]')!;
   const controlsBtn = topbar.querySelector<HTMLButtonElement>('[data-controls-btn]')!;
   const controlsPopover = topbar.querySelector<HTMLElement>('[data-controls-popover]')!;
-  const invertDragBtn = topbar.querySelector<HTMLButtonElement>('[data-invert-drag-btn]')!;
+  const lookModeBtns = Array.from(topbar.querySelectorAll<HTMLButtonElement>('[data-look-mode]'));
   const replayIntroBtn = topbar.querySelector<HTMLButtonElement>('[data-replay-intro-btn]')!;
   const changeDifficultyBtn = topbar.querySelector<HTMLButtonElement>('[data-change-difficulty-btn]')!;
   const muteBtn = topbar.querySelector<HTMLButtonElement>('[data-mute-btn]')!;
   const onboardDragChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-drag]')!;
+  const onboardFlipBtn = onboardingEl.querySelector<HTMLButtonElement>('[data-onboard-flip-drag]')!;
   const onboardWalkChip = onboardingEl.querySelector<HTMLElement>('[data-onboard-walk]')!;
   const focusBackBtn = focusBar.querySelector<HTMLButtonElement>('[data-focus-back]')!;
   const focusLabelEl = focusBar.querySelector<HTMLElement>('[data-focus-label]')!;
@@ -558,7 +563,23 @@ export function createUIController(
   }
 
   function syncInvertDragSwitch(): void {
-    invertDragBtn.setAttribute('aria-checked', String(getInvertDragState()));
+    const inverted = getInvertDragState();
+    lookModeBtns.forEach((btn) => {
+      const isFps = btn.dataset.lookMode === 'fps';
+      const active = isFps === inverted;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-checked', String(active));
+    });
+  }
+
+  function applyLookStyle(inverted: boolean): void {
+    options?.onToggleInvertDrag?.(inverted);
+    syncInvertDragSwitch();
+    audio.playClick();
+    showToast(
+      inverted ? 'Look Style: Mouse Look (FPS)' : 'Look Style: Grab World (Trackpad)',
+      2400
+    );
   }
 
   function renderLeadCollapsedState(): void {
@@ -862,12 +883,16 @@ export function createUIController(
     setControlsOpen(!controlsOpen);
   });
 
-  invertDragBtn.addEventListener('click', () => {
-    const next = !getInvertDragState();
-    options?.onToggleInvertDrag?.(next);
-    invertDragBtn.setAttribute('aria-checked', String(next));
-    audio.playClick();
-    showToast(next ? 'Drag-to-look inverted.' : 'Drag-to-look set to standard.', 2200);
+  lookModeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const wantInverted = btn.dataset.lookMode === 'fps';
+      applyLookStyle(wantInverted);
+    });
+  });
+
+  onboardFlipBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    applyLookStyle(!getInvertDragState());
   });
 
   leadDismissBtn.addEventListener('click', () => {

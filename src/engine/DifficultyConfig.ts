@@ -169,7 +169,7 @@ export function generatePuzzleConfig(difficulty: DifficultyMode, seed?: number):
       seed: seed ?? 1898,
       lunarSolution: [1, 4, 5, 0],
       lunarClues: {
-        heading: 'I. The Lunar Cryptex',
+        heading: 'The Lunar Cryptex',
         lines: [
           'First, consult my Framed Lunar Almanac on the South-West wall — the four marked phases unlock my desk cryptex in Roman order (I through IV).',
         ],
@@ -206,7 +206,7 @@ export function generatePuzzleConfig(difficulty: DifficultyMode, seed?: number):
       seed: seed ?? 1899,
       lunarSolution: [1, 2, 5, 7],
       lunarClues: {
-        heading: 'I. Four Nights of the Synodic Watch',
+        heading: 'Four Nights of the Synodic Watch',
         lines: [
           'Night I: A slender silver sliver rising on the right — one step clockwise past total darkness.',
           'Night II: The lunar disk cleanly bisected, its right half bright at evening meridian.',
@@ -330,7 +330,7 @@ export function generatePuzzleConfig(difficulty: DifficultyMode, seed?: number):
     seed: resolvedSeed,
     lunarSolution,
     lunarClues: {
-      heading: 'I. The Synodic Wheel Cipher',
+      heading: 'The Synodic Wheel Cipher',
       lines: lunarLines,
       showAlmanacMarks: false,
     },

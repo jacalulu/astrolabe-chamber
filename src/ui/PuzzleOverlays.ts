@@ -958,7 +958,12 @@ export function createPuzzleOverlays(
       <h2 id="hints-dialog-title" class="dossier-title">Observatory Journal</h2>
       <div class="hint-progress-grid" data-hint-progress></div>
       <div class="clue-notebook-section">
-        <p class="hint-section-label">Discovered Clues</p>
+        <div class="clue-notebook-header">
+          <p class="hint-section-label">Discovered Clues</p>
+          <button type="button" class="btn-brass-secondary journal-logbook-btn" data-open-logbook-btn>
+            Open Dr. Vance’s Logbook
+          </button>
+        </div>
         <div class="clue-notebook-list" data-clue-notebook></div>
       </div>
       <div data-hint-body></div>
@@ -973,11 +978,19 @@ export function createPuzzleOverlays(
 
   const hintProgressEl = hintDialog.querySelector<HTMLElement>('[data-hint-progress]')!;
   const clueNotebookEl = hintDialog.querySelector<HTMLElement>('[data-clue-notebook]')!;
+  const openLogbookFromJournalBtn = hintDialog.querySelector<HTMLButtonElement>('[data-open-logbook-btn]')!;
   const hintBodyEl = hintDialog.querySelector<HTMLElement>('[data-hint-body]')!;
   const hintCountEl = hintDialog.querySelector<HTMLElement>('[data-hint-count]')!;
   const revealHintBtn = hintDialog.querySelector<HTMLButtonElement>('[data-reveal-hint]')!;
 
+  openLogbookFromJournalBtn.addEventListener('click', () => {
+    openLogbook();
+  });
+
   function renderDiscoveredClues(snap: Readonly<GameStateSnapshot>): void {
+    openLogbookFromJournalBtn.hidden = !(
+      snap.hasReadLogbook || snap.difficulty === 'apprentice'
+    );
     const cfg = snap.puzzleConfig;
     const clues: Array<{ source: string; detail: string }> = [];
 

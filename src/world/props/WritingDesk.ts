@@ -848,6 +848,14 @@ export function buildWritingDesk(textures: TextureBundle): PropModuleResult {
   );
   logbookGroup.add(bookmark);
 
+  // Generous invisible padded click hitbox around the open Logbook so clicking anywhere on or beside it opens cleanly
+  const logbookHitbox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.16, 0.44),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
+  logbookHitbox.position.set(0, 0.06, 0);
+  logbookGroup.add(logbookHitbox);
+
   // ============================================================================
   // 6. PUZZLE A — 4-DIAL LUNAR PHASE CRYPTEX BOX (local +0.26, deskH, +0.10)
   // ============================================================================
@@ -1123,11 +1131,13 @@ export function buildWritingDesk(textures: TextureBundle): PropModuleResult {
   sapphirePickupGroup.add(sapphireGlowLight);
 
   enableShadows(root, true, true);
-  // Don't let translucent glass lens, bulb, or invisible hitbox cast shadows
+  // Don't let translucent glass lens, bulb, or invisible hitboxes cast shadows
   bulb.castShadow = false;
   sapphireLensMesh.castShadow = false;
   boxHitbox.castShadow = false;
   boxHitbox.receiveShadow = false;
+  logbookHitbox.castShadow = false;
+  logbookHitbox.receiveShadow = false;
 
   // ============================================================================
   // INTERACTABLES & COLLIDERS
@@ -1136,9 +1146,12 @@ export function buildWritingDesk(textures: TextureBundle): PropModuleResult {
     {
       id: 'desk_logbook',
       object: logbookGroup,
+      stationId: 'lunar_box',
+      focusOnly: false,
+      maxDistance: 4.8,
       cursor: 'pointer',
-      label: 'Observatory Logbook (1898)',
-      hint: 'Click to read Dr. Vance’s notes',
+      label: "Dr. Vance's Observatory Logbook",
+      hint: 'Click to open & read notes',
       onInteract: (ctx) => {
         ctx.audio.playClick();
         ctx.ui.openLogbook();

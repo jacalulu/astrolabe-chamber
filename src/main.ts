@@ -253,8 +253,13 @@ function bootstrap(): void {
   // Apply adaptive GPU tier shadow limits on constrained / mobile devices
   sceneManager.applyQualityTierToShadows();
 
-  // Forward-declared handles for UI / Intro callbacks
+  // Forward-declared handles for UI / Intro callbacks (persisted drag-look preference)
   let invertDragSetting = false;
+  try {
+    invertDragSetting = window.localStorage.getItem('astrolabe_invert_drag') === 'true';
+  } catch {
+    invertDragSetting = false;
+  }
   let controls: Controls | null = null;
   let introDirector: IntroDirector | null = null;
   let isReplayMode = false;

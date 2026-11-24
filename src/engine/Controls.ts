@@ -19,7 +19,25 @@ const SPAWN_POS: [number, number, number] = [0, EYE_HEIGHT, 4.55];
 const SPAWN_LOOK_AT: [number, number, number] = [0, 1.5, -0.5];
 const MIN_PITCH = THREE.MathUtils.degToRad(-72);
 const MAX_PITCH = THREE.MathUtils.degToRad(78);
-const DRAG_THRESHOLD_PX = 4;
+const DRAG_THRESHOLD_PX = 8;
+const KEYBOARD_TURN_SPEED = 1.85; // rad/s for smooth Q / E turning
+const INVERT_DRAG_STORAGE_KEY = 'astrolabe_invert_drag';
+
+function loadStoredInvertDrag(): boolean {
+  try {
+    return window.localStorage.getItem(INVERT_DRAG_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveStoredInvertDrag(inverted: boolean): void {
+  try {
+    window.localStorage.setItem(INVERT_DRAG_STORAGE_KEY, inverted ? 'true' : 'false');
+  } catch {
+    /* ignore storage errors in private/sandboxed contexts */
+  }
+}
 
 const OCTAGON_NORMALS: Array<{ x: number; z: number }> = [];
 for (let i = 0; i < 8; i++) {
@@ -59,7 +77,7 @@ export class Controls {
   private draggedDuringPress = false;
   private lastReleaseWasDrag = false;
   private cumulativeDragPath = 0;
-  private invertDrag = false;
+  private invertDrag = loadStoredInvertDrag();
   private walkDistanceAccum = 0;
 
   // Focus mode state
@@ -158,6 +176,7 @@ export class Controls {
 
   public setInvertDrag(inverted: boolean): void {
     this.invertDrag = inverted;
+    saveStoredInvertDrag(inverted);
   }
 
   public setVirtualMove(forward: number, strafe: number): void {
@@ -280,12 +299,14 @@ export class Controls {
       e.code === 'KeyA' ||
       e.code === 'KeyS' ||
       e.code === 'KeyD' ||
+      e.code === 'KeyQ' ||
+      e.code === 'KeyE' ||
       e.code === 'ArrowUp' ||
       e.code === 'ArrowDown' ||
       e.code === 'ArrowLeft' ||
       e.code === 'ArrowRight'
     ) {
-      // Pressing any movement key while zoomed into Focus Mode steps smoothly back out to free-roam
+      // Pressing any movement/turn key while zoomed into Focus Mode steps smoothly back out to free-roam
       if (this.activeFocus) {
         this.focusOn(null);
       }
@@ -372,6 +393,16 @@ export class Controls {
   public update(delta: number): void {
     const dt = Math.min(delta, 0.08);
     const modalOpen = this.options.isModalOpen();
+
+    // Smooth Q / E keyboard turning while standing
+    if (!this.activeFocus && !modalOpen && this.focusBlend < 0.45) {
+      let turnInput = 0;
+      if (this.keys.has('KeyQ')) turnInput += 1;
+      if (this.keys.has('KeyE')) turnInput -= 1;
+      if (turnInput !== 0) {
+        this.targetYaw += turnInput * KEYBOARD_TURN_SPEED * dt;
+      }
+    }
 
     // Smooth look damping
     const lookSmooth = 1 - Math.exp(-15 * dt);
